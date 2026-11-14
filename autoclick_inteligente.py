@@ -34,6 +34,8 @@ import os
 import random
 import shutil
 import sys
+import unicodedata
+from difflib import SequenceMatcher
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -152,50 +154,80 @@ def detectar_imagens(img: Img, pasta: str, confianca: float) -> list[Hit]:
     return dedupe(hits)
 
 
-def _ocr_linhas(gray: Img, lang: str) -> list[list[Palavra]]:
+def _norm(s: str) -> str:
+    """Minúsculas, sem acentos e sem pontuação nas pontas."""
+    s = unicodedata.normalize("NFKD", s.lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.strip(".,:;!?\"'()[]{}|")
+
+
+def _parecido(lido: str, alvo: str) -> bool:
+    """Igual, ou quase igual (tolera 1-2 letras erradas do OCR em palavras longas)."""
+    if lido == alvo:
+        return True
+    if len(alvo) < 4:
+        return False
+    return SequenceMatcher(None, lido, alvo).ratio() >= 0.8
+
+
+def _ocr_linhas(
+    gray: Img, lang: str, escala: float = 2.0, conf_min: float = 30.0
+) -> list[list[Palavra]]:
     tess = _tesseract()
+    if escala != 1.0:
+        gray = cast(
+            Img, cv2.resize(gray, None, fx=escala, fy=escala, interpolation=cv2.INTER_CUBIC)
+        )
     d: dict[str, list[Any]] = tess.image_to_data(
         gray, lang=lang, output_type=tess.Output.DICT
     )
     linhas: dict[tuple[int, int, int], list[Palavra]] = {}
     for i, bruto in enumerate(d["text"]):
-        t = str(bruto).strip()
+        t = _norm(str(bruto))
         try:
             conf = float(d["conf"][i])
         except (ValueError, TypeError):
             continue
-        if not t or conf < 50:
+        if not t or conf < conf_min:
             continue
         chave = (int(d["block_num"][i]), int(d["par_num"][i]), int(d["line_num"][i]))
+        # Coordenadas voltam para a escala da imagem original.
         linhas.setdefault(chave, []).append(
             (
-                t.lower().strip(".,:;!?"),
-                int(d["left"][i]),
-                int(d["top"][i]),
-                int(d["width"][i]),
-                int(d["height"][i]),
+                t,
+                int(d["left"][i] / escala),
+                int(d["top"][i] / escala),
+                int(d["width"][i] / escala),
+                int(d["height"][i] / escala),
             )
         )
     return list(linhas.values())
 
 
-def detectar_texto(img: Img, palavras: list[str], lang: str) -> list[Hit]:
+def detectar_texto(
+    img: Img, palavras: list[str], lang: str, debug: bool = False
+) -> list[Hit]:
     gray = cast(Img, cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
     hits: list[Hit] = []
+    vistas: set[str] = set()
     # Duas passadas: texto escuro em fundo claro e o inverso (botões escuros).
     for variante in (gray, cast(Img, cv2.bitwise_not(gray))):
         for palavras_linha in _ocr_linhas(variante, lang):
+            vistas.update(w[0] for w in palavras_linha)
             for alvo in palavras:
-                tw = alvo.lower().split()
+                tw = [_norm(p) for p in alvo.split()]
                 n = len(tw)
                 for s in range(len(palavras_linha) - n + 1):
                     seq = palavras_linha[s:s + n]
-                    if [w[0] for w in seq] == tw:
+                    if all(_parecido(w[0], t) for w, t in zip(seq, tw)):
                         x = min(w[1] for w in seq)
                         y = min(w[2] for w in seq)
                         x2 = max(w[1] + w[3] for w in seq)
                         y2 = max(w[2] + w[4] for w in seq)
                         hits.append(Hit(x, y, x2 - x, y2 - y, alvo))
+    if debug:
+        print(f"[debug] OCR leu {len(vistas)} palavras distintas:")
+        print("  " + ", ".join(sorted(vistas)) if vistas else "  (nenhuma)")
     return dedupe(hits)
 
 
@@ -277,6 +309,8 @@ def main() -> None:
                     help="segundos antes de clicar de novo na mesma posição")
     ap.add_argument("--max-cliques", type=int, default=0, help="0 = sem limite")
     ap.add_argument("--duracao", type=float, default=0, help="para após N segundos (0 = sem limite)")
+    ap.add_argument("--debug", action="store_true",
+                    help="mostra todas as palavras que o OCR conseguiu ler (modo texto)")
     ap.add_argument("--tesseract", default="",
                     help=r"caminho do tesseract.exe se não estiver no PATH")
     ap.add_argument("--preview", action="store_true",
@@ -300,6 +334,7 @@ def main() -> None:
     max_cliques = int(args.max_cliques)
     duracao = float(args.duracao)
     preview = bool(args.preview)
+    debug = bool(args.debug)
     tesseract_cmd = str(args.tesseract)
     if tesseract_cmd:
         os.environ["TESSERACT_CMD"] = tesseract_cmd
@@ -321,7 +356,7 @@ def main() -> None:
             if modo == "imagem":
                 hits = detectar_imagens(img, pasta, confianca)
             elif modo == "texto":
-                hits = detectar_texto(img, palavras, lang)
+                hits = detectar_texto(img, palavras, lang, debug)
             else:
                 hits = detectar_auto(img, palavras, lang)
 

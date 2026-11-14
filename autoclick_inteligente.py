@@ -345,6 +345,66 @@ def trazer_janela_para_frente(x: int, y: int) -> bool:
     return bool(user32.GetForegroundWindow() == raiz)
 
 
+# --------------------------------------------------------------------------- #
+# Mouse "de verdade" no Windows (SendInput): gera eventos reais de movimento,
+# que jogos usam para ativar o hover. O pyautogui usa SetCursorPos, que só
+# teletransporta o ponteiro sem gerar esses eventos.
+# --------------------------------------------------------------------------- #
+class _MouseInput(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _InputUnion(ctypes.Union):
+    _fields_ = [("mi", _MouseInput)]
+
+
+class _Input(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_uint32), ("u", _InputUnion)]
+
+
+_MOVE = 0x0001
+_LEFTDOWN = 0x0002
+_LEFTUP = 0x0004
+_VIRTUALDESK = 0x4000
+_ABSOLUTE = 0x8000
+
+
+def _enviar_mouse(dx: int, dy: int, flags: int) -> None:
+    user32: Any = getattr(ctypes, "windll").user32
+    entrada = _Input(type=0, u=_InputUnion(mi=_MouseInput(dx, dy, 0, flags, 0, 0)))
+    user32.SendInput(1, ctypes.byref(entrada), ctypes.sizeof(entrada))
+
+
+def mover_real(px: int, py: int) -> None:
+    """Move o cursor para (px, py) enviando um evento de mouse real."""
+    user32: Any = getattr(ctypes, "windll").user32
+    vx = int(user32.GetSystemMetrics(76))  # SM_XVIRTUALSCREEN
+    vy = int(user32.GetSystemMetrics(77))
+    vw = int(user32.GetSystemMetrics(78))
+    vh = int(user32.GetSystemMetrics(79))
+    nx = round((px - vx) * 65535 / max(1, vw - 1))
+    ny = round((py - vy) * 65535 / max(1, vh - 1))
+    _enviar_mouse(nx, ny, _MOVE | _ABSOLUTE | _VIRTUALDESK)
+
+
+def mover_suave(px: int, py: int, duracao: float = 0.3, passos: int = 18) -> None:
+    """Trajetória curta com vários eventos reais de movimento até (px, py)."""
+    pos = pyautogui.position()
+    x0, y0 = int(pos.x), int(pos.y)
+    for i in range(1, passos + 1):
+        t = i / passos
+        e = 1 - (1 - t) ** 2  # desacelera ao chegar
+        mover_real(round(x0 + (px - x0) * e), round(y0 + (py - y0) * e))
+        time.sleep(duracao / passos)
+
+
 def clicar(
     h: Hit,
     esc_x: float,
@@ -358,6 +418,7 @@ def clicar(
     jitter: float = 0.0,
     foco: bool = True,
     debug: bool = False,
+    mouse: str = "input",
 ) -> None:
     cx, cy = ponto_de_clique(h, dx, dy)
     cx_f, cy_f = float(cx), float(cy)
@@ -374,27 +435,47 @@ def clicar(
         if debug:
             print(f"[debug] janela em foco: {ok}")
 
-    # 2) Chegada em duas etapas, devagar: o jogo recebe movimentos reais e
-    #    atualiza a posição interna do cursor (evita clicar no lugar antigo).
-    pyautogui.moveTo(max(0, px - 12), py, duration=random.uniform(0.1, 0.2))
-    pyautogui.moveTo(px, py, duration=0.3)
-    pyautogui.moveRel(1, 0, duration=0.03)
-    pyautogui.moveRel(-1, 0, duration=0.03)
+    usar_input = mouse == "input" and sys.platform == "win32"
+
+    # 2) Chegada: vários eventos de movimento REAIS (SendInput) para o jogo
+    #    ativar o hover, como acontece quando você mexe o mouse de verdade.
+    if usar_input:
+        mover_suave(px, py, duracao=random.uniform(0.25, 0.4))
+        # Pequeno "tremor" sobre o botão, terminando exatamente no alvo.
+        mover_real(px + 2, py)
+        time.sleep(0.04)
+        mover_real(px - 1, py)
+        time.sleep(0.04)
+        mover_real(px, py)
+    else:
+        pyautogui.moveTo(max(0, px - 12), py, duration=random.uniform(0.1, 0.2))
+        pyautogui.moveTo(px, py, duration=0.3)
+        pyautogui.moveRel(1, 0, duration=0.03)
+        pyautogui.moveRel(-1, 0, duration=0.03)
     time.sleep(espera_hover)
 
     # 3) Confere onde o cursor realmente parou e corrige se desviou.
     real = pyautogui.position()
-    if abs(real.x - px) > 2 or abs(real.y - py) > 2:
-        pyautogui.moveTo(px, py, duration=0.1)
+    if abs(real.x - px) > 3 or abs(real.y - py) > 3:
+        if usar_input:
+            mover_real(px, py)
+        else:
+            pyautogui.moveTo(px, py, duration=0.1)
         time.sleep(0.05)
         real = pyautogui.position()
     if debug:
-        print(f"[debug] alvo=({px},{py}) cursor=({real.x},{real.y})")
+        print(f"[debug] mouse={'SendInput' if usar_input else 'pyautogui'} "
+              f"alvo=({px},{py}) cursor=({real.x},{real.y})")
 
     # 4) Pressiona, segura e solta.
-    pyautogui.mouseDown()
-    time.sleep(hold)
-    pyautogui.mouseUp()
+    if usar_input:
+        _enviar_mouse(0, 0, _LEFTDOWN)
+        time.sleep(hold)
+        _enviar_mouse(0, 0, _LEFTUP)
+    else:
+        pyautogui.mouseDown()
+        time.sleep(hold)
+        pyautogui.mouseUp()
 
 
 def main() -> None:
@@ -419,6 +500,9 @@ def main() -> None:
                     help="desloca o ponto de clique em pixels (ex.: --offset -5 3)")
     ap.add_argument("--jitter", type=float, default=0.0,
                     help="variação aleatória do clique como fração do botão (0 = exato)")
+    ap.add_argument("--mouse", choices=["input", "pyautogui"], default="input",
+                    help="input = eventos reais via SendInput (Windows, melhor para jogos); "
+                         "pyautogui = método antigo")
     ap.add_argument("--sem-foco", action="store_true",
                     help="não tenta trazer a janela do botão para o primeiro plano")
     ap.add_argument("--hold", type=float, default=0.08,
@@ -455,6 +539,7 @@ def main() -> None:
     off_dx, off_dy = int(offset_raw[0]), int(offset_raw[1])
     jitter = float(args.jitter)
     foco = not bool(args.sem_foco)
+    mouse = str(args.mouse)
     tesseract_cmd = str(args.tesseract)
     if tesseract_cmd:
         os.environ["TESSERACT_CMD"] = tesseract_cmd
@@ -494,7 +579,7 @@ def main() -> None:
                 if agora - recentes.get(chave, 0.0) < cooldown:
                     continue
                 clicar(h, ex, ey, ox, oy, espera_hover, hold,
-                       off_dx, off_dy, jitter, foco, debug)
+                       off_dx, off_dy, jitter, foco, debug, mouse)
                 recentes[chave] = agora
                 cliques += 1
                 print(f"[{time.strftime('%H:%M:%S')}] clique #{cliques}: {h.rotulo} em {h.centro}")

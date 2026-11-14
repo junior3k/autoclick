@@ -30,6 +30,7 @@ Segurança:
 from __future__ import annotations
 
 import argparse
+import ctypes
 import os
 import random
 import shutil
@@ -273,13 +274,75 @@ def detectar_auto(img: Img, palavras: list[str], lang: str) -> list[Hit]:
 # --------------------------------------------------------------------------- #
 # Ação
 # --------------------------------------------------------------------------- #
-def salvar_preview(img: Img, hits: list[Hit], caminho: str = "preview.png") -> None:
+def ponto_de_clique(h: Hit, dx: int = 0, dy: int = 0) -> tuple[int, int]:
+    """Ponto exato do clique (em pixels da imagem capturada): centro do botão + ajuste."""
+    cx, cy = h.centro
+    return cx + dx, cy + dy
+
+
+def salvar_preview(
+    img: Img, hits: list[Hit], caminho: str = "preview.png", dx: int = 0, dy: int = 0
+) -> None:
     out = img.copy()
     for h in hits:
         cv2.rectangle(out, (h.x, h.y), (h.x + h.w, h.y + h.h), (0, 255, 0), 2)
+        # Cruz vermelha = ponto exato onde o clique vai acontecer.
+        cv2.drawMarker(out, ponto_de_clique(h, dx, dy), (0, 0, 255),
+                       cv2.MARKER_CROSS, 24, 2)
         cv2.putText(out, h.rotulo, (h.x, max(12, h.y - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
     cv2.imwrite(caminho, out)
+
+
+def trazer_janela_para_frente(x: int, y: int) -> bool:
+    """Windows: traz para o primeiro plano a janela que está sob o ponto (x, y).
+
+    Retorna True se a janela já estava (ou ficou) em foco.
+    """
+    if sys.platform != "win32":
+        return False
+    from ctypes import wintypes
+
+    windll: Any = getattr(ctypes, "windll")
+    user32: Any = windll.user32
+    kernel32: Any = windll.kernel32
+
+    # argtypes corretos evitam truncar handles de 64 bits.
+    user32.WindowFromPoint.argtypes = [wintypes.POINT]
+    user32.WindowFromPoint.restype = wintypes.HWND
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+
+    hwnd = user32.WindowFromPoint(wintypes.POINT(x, y))
+    if not hwnd:
+        return False
+    raiz = user32.GetAncestor(hwnd, 2) or hwnd  # GA_ROOT
+    atual = user32.GetForegroundWindow()
+    if atual == raiz:
+        return True
+
+    # O Windows só deixa trazer uma janela para frente se anexarmos a thread da atual.
+    tid_atual = int(user32.GetWindowThreadProcessId(atual, None)) if atual else 0
+    tid_nosso = int(kernel32.GetCurrentThreadId())
+    anexado = False
+    if tid_atual and tid_atual != tid_nosso:
+        anexado = bool(user32.AttachThreadInput(tid_atual, tid_nosso, True))
+    try:
+        if user32.IsIconic(raiz):
+            user32.ShowWindow(raiz, 9)  # SW_RESTORE (só se estiver minimizada)
+        user32.SetForegroundWindow(raiz)
+    finally:
+        if anexado:
+            user32.AttachThreadInput(tid_atual, tid_nosso, False)
+    time.sleep(0.2)
+    return bool(user32.GetForegroundWindow() == raiz)
 
 
 def clicar(
@@ -288,22 +351,47 @@ def clicar(
     esc_y: float,
     off_x: int,
     off_y: int,
-    espera_hover: float = 0.15,
+    espera_hover: float = 0.25,
     hold: float = 0.08,
+    dx: int = 0,
+    dy: int = 0,
+    jitter: float = 0.0,
+    foco: bool = True,
+    debug: bool = False,
 ) -> None:
-    # Clica num ponto aleatório perto do centro (30% central do botão).
-    cx, cy = h.centro
-    cx_f = cx + random.uniform(-0.15, 0.15) * h.w
-    cy_f = cy + random.uniform(-0.15, 0.15) * h.h
-    px = off_x + cx_f * esc_x
-    py = off_y + cy_f * esc_y
-    pyautogui.moveTo(px, py, duration=random.uniform(0.15, 0.35))
-    # Jogos costumam ignorar clique instantâneo e cursor "teletransportado":
-    # 1) pequeno vaivém para gerar eventos reais de movimento (ativa o hover),
-    # 2) espera o botão reagir, 3) segura o clique por alguns milissegundos.
-    pyautogui.moveRel(2, 0, duration=0.05)
-    pyautogui.moveRel(-2, 0, duration=0.05)
+    cx, cy = ponto_de_clique(h, dx, dy)
+    cx_f, cy_f = float(cx), float(cy)
+    if jitter > 0:
+        # Variação opcional (fração do tamanho do botão). Padrão: 0 = clique exato.
+        cx_f += random.uniform(-jitter, jitter) * h.w
+        cy_f += random.uniform(-jitter, jitter) * h.h
+    px = round(off_x + cx_f * esc_x)
+    py = round(off_y + cy_f * esc_y)
+
+    # 1) Garante que a janela do botão está em foco (senão o 1º clique só foca).
+    if foco:
+        ok = trazer_janela_para_frente(px, py)
+        if debug:
+            print(f"[debug] janela em foco: {ok}")
+
+    # 2) Chegada em duas etapas, devagar: o jogo recebe movimentos reais e
+    #    atualiza a posição interna do cursor (evita clicar no lugar antigo).
+    pyautogui.moveTo(max(0, px - 12), py, duration=random.uniform(0.1, 0.2))
+    pyautogui.moveTo(px, py, duration=0.3)
+    pyautogui.moveRel(1, 0, duration=0.03)
+    pyautogui.moveRel(-1, 0, duration=0.03)
     time.sleep(espera_hover)
+
+    # 3) Confere onde o cursor realmente parou e corrige se desviou.
+    real = pyautogui.position()
+    if abs(real.x - px) > 2 or abs(real.y - py) > 2:
+        pyautogui.moveTo(px, py, duration=0.1)
+        time.sleep(0.05)
+        real = pyautogui.position()
+    if debug:
+        print(f"[debug] alvo=({px},{py}) cursor=({real.x},{real.y})")
+
+    # 4) Pressiona, segura e solta.
     pyautogui.mouseDown()
     time.sleep(hold)
     pyautogui.mouseUp()
@@ -325,8 +413,14 @@ def main() -> None:
                     help="segundos antes de clicar de novo na mesma posição")
     ap.add_argument("--max-cliques", type=int, default=0, help="0 = sem limite")
     ap.add_argument("--duracao", type=float, default=0, help="para após N segundos (0 = sem limite)")
-    ap.add_argument("--espera-hover", type=float, default=0.15,
+    ap.add_argument("--espera-hover", type=float, default=0.25,
                     help="segundos com o mouse parado sobre o botão antes de clicar")
+    ap.add_argument("--offset", nargs=2, type=int, default=[0, 0], metavar=("DX", "DY"),
+                    help="desloca o ponto de clique em pixels (ex.: --offset -5 3)")
+    ap.add_argument("--jitter", type=float, default=0.0,
+                    help="variação aleatória do clique como fração do botão (0 = exato)")
+    ap.add_argument("--sem-foco", action="store_true",
+                    help="não tenta trazer a janela do botão para o primeiro plano")
     ap.add_argument("--hold", type=float, default=0.08,
                     help="segundos com o botão do mouse pressionado")
     ap.add_argument("--debug", action="store_true",
@@ -357,6 +451,10 @@ def main() -> None:
     debug = bool(args.debug)
     espera_hover = float(args.espera_hover)
     hold = float(args.hold)
+    offset_raw = cast(list[int], args.offset)
+    off_dx, off_dy = int(offset_raw[0]), int(offset_raw[1])
+    jitter = float(args.jitter)
+    foco = not bool(args.sem_foco)
     tesseract_cmd = str(args.tesseract)
     if tesseract_cmd:
         os.environ["TESSERACT_CMD"] = tesseract_cmd
@@ -383,10 +481,11 @@ def main() -> None:
                 hits = detectar_auto(img, palavras, lang)
 
             if preview:
-                salvar_preview(img, hits)
-                print(f"{len(hits)} botão(ões) detectado(s). Veja preview.png")
+                salvar_preview(img, hits, "preview.png", off_dx, off_dy)
+                print(f"{len(hits)} botão(ões) detectado(s). Veja preview.png (cruz vermelha = ponto do clique)")
                 for h in hits:
-                    print(f"  - {h.rotulo} em {h.centro} (score {h.score:.2f})")
+                    print(f"  - {h.rotulo} em {h.centro} -> clique em "
+                          f"{ponto_de_clique(h, off_dx, off_dy)} (score {h.score:.2f})")
                 break
 
             agora = time.time()
@@ -394,7 +493,8 @@ def main() -> None:
                 chave = (h.centro[0] // 20, h.centro[1] // 20)
                 if agora - recentes.get(chave, 0.0) < cooldown:
                     continue
-                clicar(h, ex, ey, ox, oy, espera_hover, hold)
+                clicar(h, ex, ey, ox, oy, espera_hover, hold,
+                       off_dx, off_dy, jitter, foco, debug)
                 recentes[chave] = agora
                 cliques += 1
                 print(f"[{time.strftime('%H:%M:%S')}] clique #{cliques}: {h.rotulo} em {h.centro}")

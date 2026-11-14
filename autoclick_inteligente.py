@@ -301,7 +301,8 @@ def ainda_no_lugar(
     """Recaptura a tela e confirma que o botão continua onde foi detectado.
 
     Evita clicar em outro elemento (ex.: o botão de fechar) se a lista andou
-    enquanto o mouse se movia. A confiança é menor porque o hover muda a cor.
+    enquanto o mouse se movia. É chamada com o cursor AO LADO do botão (sem hover),
+    pois com o cursor em cima a aparência do botão muda e o recorte não bate.
     """
     img, _, _, _, _ = capturar(monitor, regiao)
     cx, cy = h.centro
@@ -480,10 +481,29 @@ def clicar(
 
     usar_input = mouse == "input" and sys.platform == "win32"
 
-    # 2) Chegada: vários eventos de movimento REAIS (SendInput) para o jogo
-    #    ativar o hover, como acontece quando você mexe o mouse de verdade.
+    # 2) Aproximação em duas etapas:
+    #    a) para AO LADO do botão (fora dele, sem hover) e reconfirma que o botão
+    #       ainda está ali. Com o cursor em cima, o hover mudaria a aparência e a
+    #       checagem falharia;
+    #    b) só então entra no botão com eventos de movimento REAIS (SendInput),
+    #       para o jogo ativar o hover como se fosse o mouse físico, e clica.
+    lado_x = max(20, round(off_x + h.x * esc_x) - 40)
     if usar_input:
-        mover_suave(px, py, duracao=random.uniform(0.25, 0.4))
+        mover_suave(lado_x, py, duracao=random.uniform(0.2, 0.3))
+    else:
+        pyautogui.moveTo(lado_x, py, duration=random.uniform(0.15, 0.25))
+
+    if confirmar is not None:
+        time.sleep(0.05)
+        if not confirmar():
+            if debug:
+                print("[debug] botão mudou de lugar; clique cancelado")
+            if estacionar:
+                estacionar_mouse(lado_x, py, usar_input, destino)
+            return False
+
+    if usar_input:
+        mover_suave(px, py, duracao=0.2, passos=12)
         # Pequeno "tremor" sobre o botão, terminando exatamente no alvo.
         mover_real(px + 2, py)
         time.sleep(0.04)
@@ -491,8 +511,7 @@ def clicar(
         time.sleep(0.04)
         mover_real(px, py)
     else:
-        pyautogui.moveTo(max(0, px - 12), py, duration=random.uniform(0.1, 0.2))
-        pyautogui.moveTo(px, py, duration=0.3)
+        pyautogui.moveTo(px, py, duration=0.2)
         pyautogui.moveRel(1, 0, duration=0.03)
         pyautogui.moveRel(-1, 0, duration=0.03)
     time.sleep(espera_hover)
@@ -510,15 +529,7 @@ def clicar(
         print(f"[debug] mouse={'SendInput' if usar_input else 'pyautogui'} "
               f"alvo=({px},{py}) cursor=({real.x},{real.y})")
 
-    # 4) Última checagem: o botão ainda está aqui? Se a tela mudou, não clica.
-    if confirmar is not None and not confirmar():
-        if debug:
-            print("[debug] botão mudou de lugar; clique cancelado")
-        if estacionar:
-            estacionar_mouse(px, py, usar_input, destino)
-        return False
-
-    # 5) Pressiona, segura e solta.
+    # 4) Pressiona, segura e solta.
     if usar_input:
         _enviar_mouse(0, 0, _LEFTDOWN)
         time.sleep(hold)
@@ -647,7 +658,7 @@ def main() -> None:
                 confirmar: Optional[Callable[[], bool]] = None
                 if modo == "imagem" and recheck:
                     confirmar = partial(
-                        ainda_no_lugar, h, monitor, regiao, pasta, max(0.6, confianca - 0.2)
+                        ainda_no_lugar, h, monitor, regiao, pasta, max(0.6, confianca - 0.05)
                     )
                 clicou = clicar(h, ex, ey, ox, oy, espera_hover, hold,
                                 off_dx, off_dy, jitter, foco, debug, mouse, confirmar,

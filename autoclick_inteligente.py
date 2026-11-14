@@ -40,7 +40,8 @@ from difflib import SequenceMatcher
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, cast
+from functools import partial
+from typing import Any, Callable, Optional, cast
 
 import cv2
 import mss as _mss  # type: ignore
@@ -294,6 +295,22 @@ def salvar_preview(
     cv2.imwrite(caminho, out)
 
 
+def ainda_no_lugar(
+    h: Hit, monitor: int, regiao: Optional[Regiao], pasta: str, confianca: float
+) -> bool:
+    """Recaptura a tela e confirma que o botão continua onde foi detectado.
+
+    Evita clicar em outro elemento (ex.: o botão de fechar) se a lista andou
+    enquanto o mouse se movia. A confiança é menor porque o hover muda a cor.
+    """
+    img, _, _, _, _ = capturar(monitor, regiao)
+    cx, cy = h.centro
+    for n in detectar_imagens(img, pasta, confianca):
+        if n.rotulo == h.rotulo and abs(n.centro[0] - cx) <= 8 and abs(n.centro[1] - cy) <= 8:
+            return True
+    return False
+
+
 def trazer_janela_para_frente(x: int, y: int) -> bool:
     """Windows: traz para o primeiro plano a janela que está sob o ponto (x, y).
 
@@ -405,6 +422,29 @@ def mover_suave(px: int, py: int, duracao: float = 0.3, passos: int = 18) -> Non
         time.sleep(duracao / passos)
 
 
+def estacionar_mouse(
+    px: int, py: int, usar_input: bool, destino: Optional[tuple[int, int]] = None
+) -> None:
+    """Afasta o cursor do botão para o hover não atrapalhar a próxima detecção.
+
+    Sem destino definido, vai 350 px para o lado (só passa o mouse, não clica).
+    """
+    largura, altura = pyautogui.size()
+    if destino is None:
+        alvo_x = px + 350 if px + 350 < largura - 20 else px - 350
+        alvo_y = py
+    else:
+        alvo_x, alvo_y = destino
+    # Evita os cantos da tela (o canto superior esquerdo aciona o failsafe).
+    alvo_x = min(max(alvo_x, 20), largura - 20)
+    alvo_y = min(max(alvo_y, 20), altura - 20)
+    time.sleep(0.1)  # deixa o clique terminar de ser registrado
+    if usar_input:
+        mover_suave(alvo_x, alvo_y, duracao=0.25, passos=10)
+    else:
+        pyautogui.moveTo(alvo_x, alvo_y, duration=0.25)
+
+
 def clicar(
     h: Hit,
     esc_x: float,
@@ -419,7 +459,10 @@ def clicar(
     foco: bool = True,
     debug: bool = False,
     mouse: str = "input",
-) -> None:
+    confirmar: Optional[Callable[[], bool]] = None,
+    estacionar: bool = True,
+    destino: Optional[tuple[int, int]] = None,
+) -> bool:
     cx, cy = ponto_de_clique(h, dx, dy)
     cx_f, cy_f = float(cx), float(cy)
     if jitter > 0:
@@ -467,7 +510,15 @@ def clicar(
         print(f"[debug] mouse={'SendInput' if usar_input else 'pyautogui'} "
               f"alvo=({px},{py}) cursor=({real.x},{real.y})")
 
-    # 4) Pressiona, segura e solta.
+    # 4) Última checagem: o botão ainda está aqui? Se a tela mudou, não clica.
+    if confirmar is not None and not confirmar():
+        if debug:
+            print("[debug] botão mudou de lugar; clique cancelado")
+        if estacionar:
+            estacionar_mouse(px, py, usar_input, destino)
+        return False
+
+    # 5) Pressiona, segura e solta.
     if usar_input:
         _enviar_mouse(0, 0, _LEFTDOWN)
         time.sleep(hold)
@@ -476,6 +527,9 @@ def clicar(
         pyautogui.mouseDown()
         time.sleep(hold)
         pyautogui.mouseUp()
+    if estacionar:
+        estacionar_mouse(px, py, usar_input, destino)
+    return True
 
 
 def main() -> None:
@@ -503,6 +557,12 @@ def main() -> None:
     ap.add_argument("--mouse", choices=["input", "pyautogui"], default="input",
                     help="input = eventos reais via SendInput (Windows, melhor para jogos); "
                          "pyautogui = método antigo")
+    ap.add_argument("--estacionar", nargs=2, type=int, default=None, metavar=("X", "Y"),
+                    help="onde deixar o mouse após cada clique (padrão: 350 px ao lado do botão)")
+    ap.add_argument("--sem-estacionar", action="store_true",
+                    help="deixa o mouse parado sobre o botão após o clique")
+    ap.add_argument("--sem-recheck", action="store_true",
+                    help="não reconfirma a posição do botão logo antes de clicar (modo imagem)")
     ap.add_argument("--sem-foco", action="store_true",
                     help="não tenta trazer a janela do botão para o primeiro plano")
     ap.add_argument("--hold", type=float, default=0.08,
@@ -540,6 +600,12 @@ def main() -> None:
     jitter = float(args.jitter)
     foco = not bool(args.sem_foco)
     mouse = str(args.mouse)
+    recheck = not bool(args.sem_recheck)
+    estacionar = not bool(args.sem_estacionar)
+    park_raw = cast(Optional[list[int]], args.estacionar)
+    destino: Optional[tuple[int, int]] = (
+        (int(park_raw[0]), int(park_raw[1])) if park_raw is not None else None
+    )
     tesseract_cmd = str(args.tesseract)
     if tesseract_cmd:
         os.environ["TESSERACT_CMD"] = tesseract_cmd
@@ -578,8 +644,17 @@ def main() -> None:
                 chave = (h.centro[0] // 20, h.centro[1] // 20)
                 if agora - recentes.get(chave, 0.0) < cooldown:
                     continue
-                clicar(h, ex, ey, ox, oy, espera_hover, hold,
-                       off_dx, off_dy, jitter, foco, debug, mouse)
+                confirmar: Optional[Callable[[], bool]] = None
+                if modo == "imagem" and recheck:
+                    confirmar = partial(
+                        ainda_no_lugar, h, monitor, regiao, pasta, max(0.6, confianca - 0.2)
+                    )
+                clicou = clicar(h, ex, ey, ox, oy, espera_hover, hold,
+                                off_dx, off_dy, jitter, foco, debug, mouse, confirmar,
+                                estacionar, destino)
+                if not clicou:
+                    print(f"[{time.strftime('%H:%M:%S')}] botão mudou de lugar; clique cancelado")
+                    continue
                 recentes[chave] = agora
                 cliques += 1
                 print(f"[{time.strftime('%H:%M:%S')}] clique #{cliques}: {h.rotulo} em {h.centro}")

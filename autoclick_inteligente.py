@@ -282,7 +282,15 @@ def salvar_preview(img: Img, hits: list[Hit], caminho: str = "preview.png") -> N
     cv2.imwrite(caminho, out)
 
 
-def clicar(h: Hit, esc_x: float, esc_y: float, off_x: int, off_y: int) -> None:
+def clicar(
+    h: Hit,
+    esc_x: float,
+    esc_y: float,
+    off_x: int,
+    off_y: int,
+    espera_hover: float = 0.15,
+    hold: float = 0.08,
+) -> None:
     # Clica num ponto aleatório perto do centro (30% central do botão).
     cx, cy = h.centro
     cx_f = cx + random.uniform(-0.15, 0.15) * h.w
@@ -290,7 +298,15 @@ def clicar(h: Hit, esc_x: float, esc_y: float, off_x: int, off_y: int) -> None:
     px = off_x + cx_f * esc_x
     py = off_y + cy_f * esc_y
     pyautogui.moveTo(px, py, duration=random.uniform(0.15, 0.35))
-    pyautogui.click()
+    # Jogos costumam ignorar clique instantâneo e cursor "teletransportado":
+    # 1) pequeno vaivém para gerar eventos reais de movimento (ativa o hover),
+    # 2) espera o botão reagir, 3) segura o clique por alguns milissegundos.
+    pyautogui.moveRel(2, 0, duration=0.05)
+    pyautogui.moveRel(-2, 0, duration=0.05)
+    time.sleep(espera_hover)
+    pyautogui.mouseDown()
+    time.sleep(hold)
+    pyautogui.mouseUp()
 
 
 def main() -> None:
@@ -309,6 +325,10 @@ def main() -> None:
                     help="segundos antes de clicar de novo na mesma posição")
     ap.add_argument("--max-cliques", type=int, default=0, help="0 = sem limite")
     ap.add_argument("--duracao", type=float, default=0, help="para após N segundos (0 = sem limite)")
+    ap.add_argument("--espera-hover", type=float, default=0.15,
+                    help="segundos com o mouse parado sobre o botão antes de clicar")
+    ap.add_argument("--hold", type=float, default=0.08,
+                    help="segundos com o botão do mouse pressionado")
     ap.add_argument("--debug", action="store_true",
                     help="mostra todas as palavras que o OCR conseguiu ler (modo texto)")
     ap.add_argument("--tesseract", default="",
@@ -335,6 +355,8 @@ def main() -> None:
     duracao = float(args.duracao)
     preview = bool(args.preview)
     debug = bool(args.debug)
+    espera_hover = float(args.espera_hover)
+    hold = float(args.hold)
     tesseract_cmd = str(args.tesseract)
     if tesseract_cmd:
         os.environ["TESSERACT_CMD"] = tesseract_cmd
@@ -372,7 +394,7 @@ def main() -> None:
                 chave = (h.centro[0] // 20, h.centro[1] // 20)
                 if agora - recentes.get(chave, 0.0) < cooldown:
                     continue
-                clicar(h, ex, ey, ox, oy)
+                clicar(h, ex, ey, ox, oy, espera_hover, hold)
                 recentes[chave] = agora
                 cliques += 1
                 print(f"[{time.strftime('%H:%M:%S')}] clique #{cliques}: {h.rotulo} em {h.centro}")

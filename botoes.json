@@ -3,7 +3,7 @@
   "maximo": {
     "acao": "clicar"
   },
-  "proxima": {
+  "_proxima": {
     "acao": "clicar",
     "intervalo": 2
   },
@@ -15,15 +15,18 @@
     ],
     "vezes": 1
   },
-  "cavalo_c": {
+  "cavalo_card": {
     "acao": "arrastar",
     "destino": [
-      980,
-      540
+      985,
+      509
     ],
     "vezes": 1
   },
   "_inicio_partida": {
     "acao": "inicio"
+  },
+  "jogar_novamente": {
+    "acao": "clicar"
   }
 }

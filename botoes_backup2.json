@@ -1,0 +1,56 @@
+{
+  "_comentario": "Renomeie para botoes.json e troque as chaves pelos nomes dos seus PNGs (sem .png). Chaves que começam com _ são ignoradas, exceto _janela.",
+  "_janela": "Roblox",
+  "maximo": {
+    "acao": "clicar"
+  },
+  "escolha_1": {
+    "acao": "clicar"
+  },
+  "jogar_novamente": {
+    "acao": "clicar"
+  },
+  "_proxima": {
+    "acao": "clicar",
+    "intervalo": 2
+  },
+  "_torre": {
+    "acao": "arrastar",
+    "vezes": 1,
+    "destino": {
+      "ancora": "mapa_ref",
+      "offset": [
+        320,
+        -140
+      ]
+    }
+  },
+  "cavalo_card": {
+    "acao": "arrastar",
+    "vezes": 1,
+    "destino": {
+      "ancora": "mapa_ref",
+      "offset": [
+        320,
+        -140
+      ]
+    }
+  },
+  "_mina": {
+    "acao": "arrastar",
+    "vezes": 1,
+    "destino": {
+      "janela": [
+        0.62,
+        0.55
+      ]
+    }
+  },
+  "_destino_fixo_exemplo": "\"destino\": [980, 540] ainda funciona, mas quebra se a janela mexer ou a câmera andar",
+  "mapa_ref": {
+    "acao": "ancora"
+  },
+  "_inicio_partida": {
+    "acao": "inicio"
+  }
+}

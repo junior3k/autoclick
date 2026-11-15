@@ -2,13 +2,12 @@
   "_comentario": "Renomeie para botoes.json e troque as chaves pelos nomes dos seus PNGs (sem .png). Chaves que começam com _ são ignoradas, exceto _janela.",
   "_janela": "Roblox",
   "maximo": {
-    "acao": "clicar"
-  },
-  "escolha_1": {
-    "acao": "clicar"
+    "acao": "clicar",
+    "auto_detect": true
   },
   "jogar_novamente": {
-    "acao": "clicar"
+    "acao": "clicar",
+    "auto_detect": true
   },
   "_proxima": {
     "acao": "clicar",
@@ -27,6 +26,7 @@
   },
   "cavalo_card": {
     "acao": "arrastar",
+    "auto_detect": true,
     "vezes": 1,
     "destino": {
       "ancora": "mapa_ref",

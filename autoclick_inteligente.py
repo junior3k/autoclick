@@ -21,6 +21,8 @@ Exemplos:
     python autoclick_inteligente.py texto --palavras "aceitar" "continuar" --preview
     python autoclick_inteligente.py gravar --janela Roblox --ancora mapa_ref --gerar-regras
     python autoclick_inteligente.py reproduzir --arquivo gravacao.json --loop
+    python autoclick_inteligente.py reproduzir --arquivo gravacao.json --loop --pasta botoes \
+        --janela Roblox     # com "auto_detect": true no json, clica em maximo/novamente
 
 Tamanho da janela (modo imagem):
     Tire os PNGs com a janela no MAIOR tamanho possível. Se depois você a deixar menor,
@@ -57,6 +59,11 @@ Regras por botão (botoes.json, ao lado do script; a chave é o nome do PNG sem 
                                                      de referência, a partir do centro dele)
     A âncora só funciona se a câmera apenas deslizar: girar ou dar zoom no mapa muda
     as distâncias e exige regravar o ponto.
+    "auto_detect": true  = o botão é clicado assim que for detectado, em qualquer modo, inclusive
+                durante a REPRODUÇÃO de uma gravação: se ele aparecer, a reprodução pausa,
+                clica nele enquanto estiver à vista e só então continua (só para "clicar").
+                false = nunca é clicado sozinho. Sem a chave: os modos de varredura clicam
+                (como sempre) e a reprodução ignora o botão.
     Opcionais: "offset": [dx, dy], "intervalo": segundos, "confirmar_cinza": true/false,
                "queda_saturacao": 0.5, "tentativas": 3, "espera_confirmacao": 0.7.
 
@@ -1101,6 +1108,9 @@ class Regra:
     queda_saturacao: float = 0.5  # cinza = saturação caiu para <= 50% do original
     tentativas: int = 3
     espera_confirmacao: float = 0.7
+    # True = clica assim que detectar (também durante a reprodução de uma gravação);
+    # False = nunca é clicado sozinho; None = padrão (clica nos modos de varredura).
+    auto_detect: Optional[bool] = None
 
 
 def carregar_regras(caminho: str) -> dict[str, Regra]:
@@ -1175,7 +1185,11 @@ def carregar_regras(caminho: str) -> dict[str, Regra]:
         intervalo: Optional[float] = (
             float(d["intervalo"]) if d.get("intervalo") is not None else None
         )
+        auto_raw: Any = d.get("auto_detect")
+        if auto_raw is not None and not isinstance(auto_raw, bool):
+            sys.exit(f"{caminho}: 'auto_detect' de '{nome}' deve ser true ou false.")
         regras[nome] = Regra(
+            auto_detect=auto_raw,
             acao=acao,
             vezes=int(d.get("vezes", 1 if acao == "arrastar" else 0)),
             intervalo=intervalo,
@@ -1781,6 +1795,143 @@ def _garantir_janela(titulo: str, espera_max: float) -> Optional[float]:
         time.sleep(0.3)
 
 
+class VigiaBotoes:
+    """Durante a reprodução: clica sozinho nos botões com "auto_detect": true.
+
+    Roda em segundo plano, olhando a tela. Enquanto algum desses botões está visível, ele
+    clica (respeitando "intervalo", "vezes" e "offset" da regra) e a reprodução fica em
+    pausa, para continuar só quando o botão sumir. Mouse e teclado da reprodução e os
+    cliques daqui nunca se misturam: ambos usam a mesma trava.
+    """
+
+    def __init__(
+        self,
+        regras: dict[str, Regra],
+        pasta: str,
+        confianca: float,
+        monitor: int,
+        regiao: Optional[Regiao],
+        titulo: Optional[str],
+        checar_janela: bool,
+        travar: threading.Lock,
+        registro: Optional[Registro] = None,
+        cooldown: float = 0.8,
+        intervalo: float = 0.4,
+        graca: float = 1.0,
+        max_continuo: float = 120.0,
+        espera_hover: float = 0.25,
+    ) -> None:
+        self.regras = {n: r for n, r in regras.items() if r.auto_detect is True and r.acao == "clicar"}
+        self.pasta, self.confianca, self.monitor = pasta, confianca, monitor
+        self.regiao, self.titulo, self.checar_janela = regiao, titulo, checar_janela
+        self.travar = travar
+        self.registro = registro
+        self.cooldown, self.intervalo, self.graca = cooldown, intervalo, graca
+        self.max_continuo, self.espera_hover = max_continuo, espera_hover
+        self.cliques = 0
+        self._feitos: dict[str, int] = {}
+        self._recentes: dict[str, float] = {}
+        self._ocupado_ate = 0.0
+        self._ocupado_desde: Optional[float] = None
+        self._suspenso_ate = 0.0
+        self._parar = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    @property
+    def nomes(self) -> list[str]:
+        return sorted(self.regras)
+
+    def ocupado(self) -> bool:
+        """True enquanto há botão automático à vista (a reprodução deve esperar)."""
+        return time.time() < self._ocupado_ate
+
+    def aguardar_livre(self) -> Optional[float]:
+        """Espera o botão sumir. Devolve os segundos esperados, ou None se abortou."""
+        ini = time.time()
+        while self.ocupado():
+            if _abortar():
+                return None
+            time.sleep(0.05)
+        return time.time() - ini
+
+    def _livre(self) -> None:
+        self._ocupado_desde = None
+        self._ocupado_ate = 0.0
+
+    def varrer_uma_vez(self) -> None:
+        agora = time.time()
+        if agora < self._suspenso_ate:
+            return
+        if self.titulo and self.checar_janela and not janela_ativa(self.titulo):
+            self._livre()  # o jogo não está à frente: não briga com o que você está fazendo
+            return
+        regiao = self.regiao
+        if self.titulo:
+            rect = _rect_seguro(self.titulo)
+            regiao = regiao_da_janela(rect, self.monitor) if rect else None
+            if regiao is None:
+                self._livre()
+                return
+        img, ex, ey, ox, oy = capturar(self.monitor, regiao)
+        alvos = [h for h in detectar_imagens(img, self.pasta, self.confianca)
+                 if h.rotulo in self.regras]
+        if not alvos:
+            self._livre()
+            return
+        if self._ocupado_desde is None:
+            self._ocupado_desde = agora
+        elif agora - self._ocupado_desde > self.max_continuo:
+            print(f"[{time.strftime('%H:%M:%S')}] auto_detect: botão à vista há mais de "
+                  f"{self.max_continuo:g}s; pausando a vigia por 30s para a reprodução seguir")
+            self._suspenso_ate = agora + 30.0
+            self._livre()
+            return
+        self._ocupado_ate = agora + self.graca
+        for h in alvos:
+            r = self.regras[h.rotulo]
+            if r.vezes and self._feitos.get(h.rotulo, 0) >= r.vezes:
+                continue
+            espera = r.intervalo if r.intervalo is not None else self.cooldown
+            if agora - self._recentes.get(h.rotulo, 0.0) < espera:
+                continue
+            sx, sy = para_tela(h, r.offset[0], r.offset[1], ex, ey, ox, oy)
+            confirmar = partial(ainda_no_lugar, h, self.monitor, regiao, self.pasta,
+                                max(0.6, self.confianca - 0.05))
+            with self.travar:
+                feito = clicar(h, ex, ey, ox, oy, self.espera_hover, 0.08, r.offset[0],
+                               r.offset[1], 0.0, True, False, confirmar, True, None)
+            if not feito:
+                continue
+            self._recentes[h.rotulo] = time.time()
+            self._feitos[h.rotulo] = self._feitos.get(h.rotulo, 0) + 1
+            self.cliques += 1
+            self._ocupado_ate = time.time() + self.graca
+            print(f"[{time.strftime('%H:%M:%S')}] auto_detect: clique em {h.rotulo} ({sx}, {sy})")
+            if self.registro is not None:
+                self.registro.log("clique_auto", h.rotulo, sx, sy, detalhe="auto_detect (reprodução)")
+
+    def _loop(self) -> None:
+        while not self._parar.is_set():
+            try:
+                self.varrer_uma_vez()
+            except FailSafe:
+                return
+            except Exception as e:  # uma falha de captura não derruba a reprodução
+                print(f"auto_detect: erro ao varrer a tela ({type(e).__name__}: {e})")
+                self._parar.wait(2.0)
+            self._parar.wait(self.intervalo)
+
+    def iniciar(self) -> None:
+        self.varrer_uma_vez()  # já olha uma vez antes da reprodução começar
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def parar(self) -> None:
+        self._parar.set()
+        if self._thread is not None:
+            self._thread.join(timeout=3)
+
+
 def reproduzir(
     arquivo: str,
     velocidade: float,
@@ -1791,10 +1942,21 @@ def reproduzir(
     checar_janela: bool = True,
     espera_janela: float = 60.0,
     teclas: bool = True,
+    config: str = "botoes.json",
+    pasta: str = "botoes",
+    confianca: float = 0.85,
+    monitor: int = 1,
+    auto_detect: bool = True,
+    auto_max: float = 120.0,
+    registro: Optional[Registro] = None,
+    intervalo_vigia: float = 0.4,
+    graca: float = 1.0,
 ) -> None:
     """Refaz a gravação.
 
     loop: None = uma vez; 0 = repete até F9; N = N vezes.
+    auto_detect: botões do botoes.json com "auto_detect": true são clicados assim que
+    aparecem; a reprodução espera enquanto algum estiver à vista.
     Antes de cada evento confere se a janela do jogo está ativa; se não estiver, tenta
     trazê-la para frente e, se não conseguir, PAUSA até ela voltar (sem perder o ritmo).
     """
@@ -1832,8 +1994,24 @@ def reproduzir(
              else f", {repeticoes} vez(es)." if repeticoes > 1 else "."))
 
     presas: set[int] = set()  # teclas que nós apertamos e ainda não soltamos
+    travar = threading.Lock()  # mouse/teclado: ou a reprodução, ou a vigia, nunca os dois
+    vigia: Optional[VigiaBotoes] = None
+    if auto_detect:
+        regras_auto = carregar_regras(config)
+        candidatos = VigiaBotoes(regras_auto, pasta, confianca, monitor, None, titulo,
+                                 checar_janela, travar, registro, intervalo=intervalo_vigia,
+                                 graca=graca, max_continuo=auto_max)
+        if candidatos.nomes:
+            if not Path(pasta).is_dir():
+                print(f"Aviso: pasta '{pasta}' não existe; auto_detect desligado.")
+            else:
+                vigia = candidatos
+                print("auto_detect ligado para: " + ", ".join(vigia.nomes)
+                      + " (a reprodução espera enquanto eles estiverem à vista).")
     volta = 0
     try:
+        if vigia is not None:
+            vigia.iniciar()
         while repeticoes == 0 or volta < repeticoes:
             volta += 1
             if repeticoes != 1:
@@ -1856,40 +2034,47 @@ def reproduzir(
                         return
                     t0 += esperou  # o tempo parado não conta no ritmo da gravação
 
-                if ev["tipo"] == "tecla":
-                    vk = int(ev["vk"])
-                    baixo = ev.get("estado") == "baixo"
-                    _enviar_tecla(vk, baixo)
-                    if baixo:
-                        presas.add(vk)
-                    else:
-                        presas.discard(vk)
-                    print(f"  {n}/{len(eventos)} tecla {ev.get('tecla', vk)} "
-                          f"{'↓' if baixo else '↑'}")
-                    continue
+                if vigia is not None:
+                    livre = vigia.aguardar_livre()  # botão automático à vista: espera ele sumir
+                    if livre is None:
+                        print("Reprodução interrompida.")
+                        return
+                    t0 += livre
+                with travar:
+                    if ev["tipo"] == "tecla":
+                        vk = int(ev["vk"])
+                        baixo = ev.get("estado") == "baixo"
+                        _enviar_tecla(vk, baixo)
+                        if baixo:
+                            presas.add(vk)
+                        else:
+                            presas.discard(vk)
+                        print(f"  {n}/{len(eventos)} tecla {ev.get('tecla', vk)} "
+                              f"{'↓' if baixo else '↑'}")
+                        continue
 
-                rect = _rect_seguro(titulo)
-                x, y = _ponto_do_evento(ev, "", rect)
-                down, up = ((_RIGHTDOWN, _RIGHTUP) if ev.get("mouse") == "direito"
-                            else (_LEFTDOWN, _LEFTUP))
-                dur = float(ev.get("duracao", 0.08))
+                    rect = _rect_seguro(titulo)
+                    x, y = _ponto_do_evento(ev, "", rect)
+                    down, up = ((_RIGHTDOWN, _RIGHTUP) if ev.get("mouse") == "direito"
+                                else (_LEFTDOWN, _LEFTUP))
+                    dur = float(ev.get("duracao", 0.08))
 
-                mover_suave(x, y, duracao=0.2, passos=12)
-                time.sleep(0.05)
-                _enviar_mouse(0, 0, down)
-                try:
-                    if ev["tipo"] == "arrasto":
-                        x2, y2 = _ponto_do_evento(ev, "2", rect)
-                        time.sleep(0.08)
-                        mover_suave(x2, y2, duracao=max(0.2, dur / vel),
-                                    passos=max(12, int(dur * 40)))
-                        time.sleep(0.1)
-                    else:
-                        time.sleep(min(max(dur, 0.04), 0.3))
-                finally:
-                    _enviar_mouse(0, 0, up)  # nunca deixa o botão do mouse preso
-                rot = f" [{ev['botao']}]" if ev.get("botao") else ""
-                print(f"  {n}/{len(eventos)} {ev['tipo']} em ({x},{y}){rot}")
+                    mover_suave(x, y, duracao=0.2, passos=12)
+                    time.sleep(0.05)
+                    _enviar_mouse(0, 0, down)
+                    try:
+                        if ev["tipo"] == "arrasto":
+                            x2, y2 = _ponto_do_evento(ev, "2", rect)
+                            time.sleep(0.08)
+                            mover_suave(x2, y2, duracao=max(0.2, dur / vel),
+                                        passos=max(12, int(dur * 40)))
+                            time.sleep(0.1)
+                        else:
+                            time.sleep(min(max(dur, 0.04), 0.3))
+                    finally:
+                        _enviar_mouse(0, 0, up)  # nunca deixa o botão do mouse preso
+                    rot = f" [{ev['botao']}]" if ev.get("botao") else ""
+                    print(f"  {n}/{len(eventos)} {ev['tipo']} em ({x},{y}){rot}")
             if repeticoes == 0 or volta < repeticoes:
                 fim = time.time() + max(0.0, pausa_loop)
                 while time.time() < fim:
@@ -1898,11 +2083,15 @@ def reproduzir(
                         return
                     time.sleep(0.02)
     finally:
+        if vigia is not None:
+            vigia.parar()
         for vk in list(presas):  # não deixa tecla "presa" se parar no meio
             try:
                 _enviar_tecla(vk, False)
             except Exception:
                 pass
+    if vigia is not None:
+        print(f"auto_detect: {vigia.cliques} clique(s) automático(s) durante a reprodução.")
     print("Reprodução concluída.")
 
 
@@ -1972,6 +2161,11 @@ def main() -> None:
     ap.add_argument("--ancora", default=None, metavar="NOME",
                     help="modo gravar: nome de um PNG do mapa (sem .png) usado como referência "
                          "para o ponto de soltura dos arrastos (acompanha a câmera)")
+    ap.add_argument("--sem-auto-detect", action="store_true",
+                    help="modo reproduzir: ignora os botões com \"auto_detect\": true do json")
+    ap.add_argument("--auto-max", type=float, default=120.0, metavar="SEG",
+                    help="modo reproduzir: se um botão auto_detect ficar à vista por mais de SEG "
+                         "segundos seguidos, a vigia pausa 30s para a reprodução seguir (padrão 120)")
     ap.add_argument("--sem-teclado", action="store_true",
                     help="não grava/reproduz/registra teclas (gravar, reproduzir e --log)")
     ap.add_argument("--estacionar", nargs=2, type=int, default=None, metavar=("X", "Y"),
@@ -2066,7 +2260,10 @@ def main() -> None:
         reproduzir(arquivo, float(args.velocidade), float(args.atraso),
                    loop=cast(Optional[int], args.loop), pausa_loop=float(args.pausa_loop),
                    janela=titulo_janela, checar_janela=not bool(args.sem_checar_janela),
-                   espera_janela=float(args.espera_janela), teclas=not sem_teclado)
+                   espera_janela=float(args.espera_janela), teclas=not sem_teclado,
+                   config=config, pasta=pasta, confianca=confianca, monitor=monitor,
+                   auto_detect=not bool(args.sem_auto_detect), auto_max=float(args.auto_max),
+                   registro=Registro(log_caminho))
         return
 
     if modo == "imagem" and not Path(pasta).is_dir():
@@ -2202,7 +2399,8 @@ def main() -> None:
 
             for h in hits:
                 regra = regras.get(h.rotulo, padrao)
-                if regra.acao in ("inicio", "ancora") or h.rotulo in estado.desistiu:
+                if (regra.acao in ("inicio", "ancora") or regra.auto_detect is False
+                        or h.rotulo in estado.desistiu):
                     continue
                 feitos = estado.feitos.get(h.rotulo, 0)
                 if regra.vezes and feitos >= regra.vezes:

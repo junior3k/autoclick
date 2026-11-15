@@ -1,0 +1,29 @@
+{
+  "_comentario": "Renomeie para botoes.json e troque as chaves pelos nomes dos seus PNGs (sem .png). Chaves que começam com _ são ignoradas.",
+  "maximo": {
+    "acao": "clicar"
+  },
+  "proxima": {
+    "acao": "clicar",
+    "intervalo": 2
+  },
+  "_torre": {
+    "acao": "arrastar",
+    "destino": [
+      980,
+      540
+    ],
+    "vezes": 1
+  },
+  "cavalo_c": {
+    "acao": "arrastar",
+    "destino": [
+      980,
+      540
+    ],
+    "vezes": 1
+  },
+  "_inicio_partida": {
+    "acao": "inicio"
+  }
+}

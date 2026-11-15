@@ -1,0 +1,62 @@
+{
+  "versao": 1,
+  "criado": "2026-11-15T01:14:15",
+  "monitor": 1,
+  "eventos": [
+    {
+      "t": 2.192,
+      "tipo": "clique",
+      "mouse": "esquerdo",
+      "x": 751,
+      "y": 957,
+      "x2": 751,
+      "y2": 957,
+      "duracao": 0.082,
+      "botao": null
+    },
+    {
+      "t": 9.888,
+      "tipo": "clique",
+      "mouse": "esquerdo",
+      "x": 1138,
+      "y": 586,
+      "x2": 1138,
+      "y2": 586,
+      "duracao": 0.118,
+      "botao": null
+    },
+    {
+      "t": 30.792,
+      "tipo": "clique",
+      "mouse": "esquerdo",
+      "x": 1138,
+      "y": 586,
+      "x2": 1138,
+      "y2": 586,
+      "duracao": 0.103,
+      "botao": null
+    },
+    {
+      "t": 32.205,
+      "tipo": "clique",
+      "mouse": "esquerdo",
+      "x": 354,
+      "y": 746,
+      "x2": 354,
+      "y2": 746,
+      "duracao": 0.141,
+      "botao": null
+    },
+    {
+      "t": 36.801,
+      "tipo": "clique",
+      "mouse": "esquerdo",
+      "x": 1226,
+      "y": 553,
+      "x2": 1226,
+      "y2": 553,
+      "duracao": 0.095,
+      "botao": null
+    }
+  ]
+}

@@ -7,7 +7,6 @@ requires-python = ">=3.14"
 dependencies = [
     "mss>=10.2.0",
     "numpy>=2.5.4",
-    "opencv-python>=5.0.0.93",
-    "pyautogui>=0.9.54",
+    "opencv-python-headless>=5.0.0.93",
     "pytesseract>=0.3.13",
 ]

@@ -7,7 +7,8 @@
   },
   "jogar_novamente": {
     "acao": "clicar",
-    "auto_detect": true
+    "auto_detect": true,
+    "reiniciar_loop": true
   },
   "_proxima": {
     "acao": "clicar",
@@ -15,18 +16,6 @@
   },
   "_torre": {
     "acao": "arrastar",
-    "vezes": 1,
-    "destino": {
-      "ancora": "mapa_ref",
-      "offset": [
-        320,
-        -140
-      ]
-    }
-  },
-  "cavalo_card": {
-    "acao": "arrastar",
-    "auto_detect": true,
     "vezes": 1,
     "destino": {
       "ancora": "mapa_ref",
@@ -50,7 +39,16 @@
   "mapa_ref": {
     "acao": "ancora"
   },
-  "_inicio_partida": {
+  "inicio_partida": {
     "acao": "inicio"
+  },
+  "trial_folhas": {
+    "acao": "clicar",
+    "auto_detect": true,
+    "escolha": "primeiro",
+    "offset": [
+      55,
+      0
+    ]
   }
 }

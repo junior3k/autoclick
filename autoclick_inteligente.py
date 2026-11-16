@@ -64,6 +64,14 @@ Regras por botão (botoes.json, ao lado do script; a chave é o nome do PNG sem 
                 clica nele enquanto estiver à vista e só então continua (só para "clicar").
                 false = nunca é clicado sozinho. Sem a chave: os modos de varredura clicam
                 (como sempre) e a reprodução ignora o botão.
+    "escolha": "primeiro" | "ultimo" | "aleatorio"  = vários botões parecidos aparecem juntos
+                (ex.: 3 cartas de "escolha uma") e basta clicar em UM, uma vez por aparição.
+                Com um único PNG que case em todos (uma parte igual entre eles, como a ponta
+                do botão amarelo), ele clica em um só. "grupo": "nome" junta PNGs diferentes
+                na mesma escolha. O grupo só destrava depois que as cartas somem da tela.
+    "reiniciar_loop": true  = clicar neste botão (ex.: Jogar Novamente) reinicia o ciclo: zera
+                a partida e, na reprodução com --loop, a gravação volta ao início SEM clicar de
+                novo neste botão (o clique gravado nele é pulado uma vez).
     Opcionais: "offset": [dx, dy], "intervalo": segundos, "confirmar_cinza": true/false,
                "queda_saturacao": 0.5, "tentativas": 3, "espera_confirmacao": 0.7.
 
@@ -1111,6 +1119,15 @@ class Regra:
     # True = clica assim que detectar (também durante a reprodução de uma gravação);
     # False = nunca é clicado sozinho; None = padrão (clica nos modos de varredura).
     auto_detect: Optional[bool] = None
+    # Escolher UM entre vários botões parecidos (ex.: 3 cartas de "escolha uma"):
+    escolha: Optional[str] = None  # "primeiro" (mais à esquerda) | "ultimo" | "aleatorio"
+    grupo: Optional[str] = None  # botões com o mesmo grupo disputam a mesma escolha
+    # Clicar neste botão reinicia o ciclo (zera a partida; na reprodução, volta ao início
+    # da gravação sem clicar de novo neste botão).
+    reiniciar_loop: bool = False
+
+
+ESCOLHAS_VALIDAS = ("primeiro", "ultimo", "aleatorio")
 
 
 def carregar_regras(caminho: str) -> dict[str, Regra]:
@@ -1188,7 +1205,20 @@ def carregar_regras(caminho: str) -> dict[str, Regra]:
         auto_raw: Any = d.get("auto_detect")
         if auto_raw is not None and not isinstance(auto_raw, bool):
             sys.exit(f"{caminho}: 'auto_detect' de '{nome}' deve ser true ou false.")
+        escolha_raw: Any = d.get("escolha")
+        grupo_raw: Any = d.get("grupo")
+        if escolha_raw is None and grupo_raw is not None:
+            escolha_raw = "primeiro"
+        if escolha_raw is not None and escolha_raw not in ESCOLHAS_VALIDAS:
+            sys.exit(f"{caminho}: 'escolha' de '{nome}' deve ser uma de: "
+                     f"{', '.join(ESCOLHAS_VALIDAS)}.")
+        reiniciar_raw: Any = d.get("reiniciar_loop", False)
+        if not isinstance(reiniciar_raw, bool):
+            sys.exit(f"{caminho}: 'reiniciar_loop' de '{nome}' deve ser true ou false.")
         regras[nome] = Regra(
+            escolha=cast(Optional[str], escolha_raw),
+            grupo=str(grupo_raw) if grupo_raw is not None else None,
+            reiniciar_loop=reiniciar_raw,
             auto_detect=auto_raw,
             acao=acao,
             vezes=int(d.get("vezes", 1 if acao == "arrastar" else 0)),
@@ -1262,6 +1292,64 @@ def resolver_destino(
             return None, f"a âncora '{nome}' não está visível"
         return (round(a[0] + dx * a[2]), round(a[1] + dy * a[3])), ""
     return None, "regra sem destino"
+
+
+class Escolhedor:
+    """"Escolha UM": vários botões parecidos aparecem juntos (ex.: 3 cartas) e basta
+    clicar em um, uma vez por aparição.
+
+    Regras com "escolha" (e opcionalmente "grupo") competem entre si: a cada varredura
+    só um dos botões do grupo é liberado para clique. Depois do clique o grupo fica
+    travado até todos sumirem da tela por 'rearme' segundos (nova aparição). Se o grupo
+    continuar à vista 'retentar_apos' segundos depois do clique, o clique é considerado
+    perdido e uma nova escolha é liberada.
+    """
+
+    def __init__(self, rearme: float = 2.0, retentar_apos: float = 8.0) -> None:
+        self.rearme, self.retentar_apos = rearme, retentar_apos
+        self._travados: dict[str, float] = {}  # grupo -> quando foi clicado
+        self._visto: dict[str, float] = {}  # grupo -> última vez à vista
+
+    @staticmethod
+    def grupo_de(h: Hit, regras: dict[str, Regra]) -> Optional[str]:
+        r = regras.get(h.rotulo)
+        if r is None or r.escolha is None:
+            return None
+        return r.grupo or h.rotulo
+
+    def filtrar(self, hits: list[Hit], regras: dict[str, Regra], agora: float) -> list[Hit]:
+        por_grupo: dict[str, list[Hit]] = {}
+        livres: list[Hit] = []
+        for h in hits:
+            g = self.grupo_de(h, regras)
+            if g is None:
+                livres.append(h)
+            else:
+                por_grupo.setdefault(g, []).append(h)
+        for g in list(self._travados):  # destrava quem sumiu (ou não respondeu ao clique)
+            if g not in por_grupo and agora - self._visto.get(g, 0.0) >= self.rearme:
+                del self._travados[g]
+            elif g in por_grupo and agora - self._travados[g] >= self.retentar_apos:
+                del self._travados[g]
+        for g, lista in por_grupo.items():
+            self._visto[g] = agora
+            if g in self._travados:
+                continue
+            modo = regras[lista[0].rotulo].escolha
+            ordenados = sorted(lista, key=lambda k: (k.x, k.y))
+            if modo == "ultimo":
+                livres.append(ordenados[-1])
+            elif modo == "aleatorio":
+                livres.append(random.choice(ordenados))
+            else:
+                livres.append(ordenados[0])
+        return livres
+
+    def travar(self, h: Hit, regras: dict[str, Regra], agora: float) -> None:
+        g = self.grupo_de(h, regras)
+        if g is not None:
+            self._travados[g] = agora
+            self._visto[g] = agora
 
 
 @dataclass
@@ -1834,6 +1922,8 @@ class VigiaBotoes:
         self._ocupado_ate = 0.0
         self._ocupado_desde: Optional[float] = None
         self._suspenso_ate = 0.0
+        self._reinicio: Optional[str] = None
+        self.escolhedor = Escolhedor()
         self._parar = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -1853,6 +1943,11 @@ class VigiaBotoes:
                 return None
             time.sleep(0.05)
         return time.time() - ini
+
+    def pegar_reinicio(self) -> Optional[str]:
+        """Nome do botão 'reiniciar_loop' clicado automaticamente (uma vez; limpa o pedido)."""
+        r, self._reinicio = self._reinicio, None
+        return r
 
     def _livre(self) -> None:
         self._ocupado_desde = None
@@ -1875,6 +1970,7 @@ class VigiaBotoes:
         img, ex, ey, ox, oy = capturar(self.monitor, regiao)
         alvos = [h for h in detectar_imagens(img, self.pasta, self.confianca)
                  if h.rotulo in self.regras]
+        alvos = self.escolhedor.filtrar(alvos, self.regras, agora)
         if not alvos:
             self._livre()
             return
@@ -1892,6 +1988,8 @@ class VigiaBotoes:
             if r.vezes and self._feitos.get(h.rotulo, 0) >= r.vezes:
                 continue
             espera = r.intervalo if r.intervalo is not None else self.cooldown
+            if r.reiniciar_loop:
+                espera = max(espera, 5.0)
             if agora - self._recentes.get(h.rotulo, 0.0) < espera:
                 continue
             sx, sy = para_tela(h, r.offset[0], r.offset[1], ex, ey, ox, oy)
@@ -1903,6 +2001,10 @@ class VigiaBotoes:
             if not feito:
                 continue
             self._recentes[h.rotulo] = time.time()
+            if r.escolha is not None:
+                self.escolhedor.travar(h, self.regras, time.time())
+            if r.reiniciar_loop:
+                self._reinicio = h.rotulo
             self._feitos[h.rotulo] = self._feitos.get(h.rotulo, 0) + 1
             self.cliques += 1
             self._ocupado_ate = time.time() + self.graca
@@ -2009,6 +2111,20 @@ def reproduzir(
                 print("auto_detect ligado para: " + ", ".join(vigia.nomes)
                       + " (a reprodução espera enquanto eles estiverem à vista).")
     volta = 0
+    # Botões "reiniciar_loop" já clicados pela vigia: o clique GRAVADO neles é pulado uma vez.
+    pular: set[str] = set()
+    reiniciou = False
+
+    def checar_reinicio() -> bool:
+        """A vigia clicou num botão 'reiniciar_loop'? Então esta volta termina aqui."""
+        nonlocal reiniciou
+        if vigia is not None:
+            rot = vigia.pegar_reinicio()
+            if rot is not None:
+                pular.add(rot)
+                reiniciou = True
+        return reiniciou
+
     try:
         if vigia is not None:
             vigia.iniciar()
@@ -2016,6 +2132,11 @@ def reproduzir(
             volta += 1
             if repeticoes != 1:
                 print(f"— Volta {volta}" + (f"/{repeticoes}" if repeticoes else "") + " —")
+            reiniciou = False
+            if vigia is not None:  # pedido que chegou entre uma volta e outra: já estamos no início
+                pendente = vigia.pegar_reinicio()
+                if pendente is not None:
+                    pular.add(pendente)
             t0 = time.time()
             for n, ev in enumerate(eventos, 1):
                 alvo = float(ev["t"]) / vel
@@ -2023,7 +2144,11 @@ def reproduzir(
                     if _abortar():
                         print("Reprodução interrompida.")
                         return
+                    if checar_reinicio():
+                        break
                     time.sleep(0.005)
+                if reiniciou:
+                    break
                 if _abortar():
                     print("Reprodução interrompida.")
                     return
@@ -2040,6 +2165,13 @@ def reproduzir(
                         print("Reprodução interrompida.")
                         return
                     t0 += livre
+                    if checar_reinicio():
+                        break
+                if ev["tipo"] != "tecla" and ev.get("botao") in pular:
+                    pular.discard(cast(str, ev["botao"]))
+                    print(f"  {n}/{len(eventos)} {ev['tipo']} em [{ev['botao']}] pulado: "
+                          "já foi clicado automaticamente")
+                    continue
                 with travar:
                     if ev["tipo"] == "tecla":
                         vk = int(ev["vk"])
@@ -2075,6 +2207,16 @@ def reproduzir(
                         _enviar_mouse(0, 0, up)  # nunca deixa o botão do mouse preso
                     rot = f" [{ev['botao']}]" if ev.get("botao") else ""
                     print(f"  {n}/{len(eventos)} {ev['tipo']} em ({x},{y}){rot}")
+            if reiniciou:
+                with travar:
+                    for vk in list(presas):  # recomeço limpo: solta o que estava apertado
+                        _enviar_tecla(vk, False)
+                    presas.clear()
+                print("  Botão de reinício clicado: recomeçando a gravação do início"
+                      + ("" if (repeticoes == 0 or volta < repeticoes) else " (fim das voltas)")
+                      + ".")
+                continue
+            pular.clear()  # nada a pular na próxima volta
             if repeticoes == 0 or volta < repeticoes:
                 fim = time.time() + max(0.0, pausa_loop)
                 while time.time() < fim:
@@ -2302,6 +2444,7 @@ def main() -> None:
     estado = Estado()
     recentes: dict[str, float] = {}
     avisos: dict[str, float] = {}
+    escolhedor = Escolhedor()
     ancoras: dict[str, Ancora] = {}
     acoes = 0
     inicio = time.time()
@@ -2397,6 +2540,7 @@ def main() -> None:
                 registro.log("inicio_partida", detalhe=f"partida {estado.partida}")
             estado.inicio_visivel = visivel
 
+            hits = escolhedor.filtrar(hits, regras, agora)  # "escolha UM" entre os parecidos
             for h in hits:
                 regra = regras.get(h.rotulo, padrao)
                 if (regra.acao in ("inicio", "ancora") or regra.auto_detect is False
@@ -2412,6 +2556,8 @@ def main() -> None:
                 else:
                     chave = f"{h.rotulo}@{cx // 20},{cy // 20}"
                 espera = regra.intervalo if regra.intervalo is not None else cooldown
+                if regra.reiniciar_loop:
+                    espera = max(espera, 5.0)  # um clique por aparição
                 if agora - recentes.get(chave, 0.0) < espera:
                     continue
 
@@ -2450,6 +2596,8 @@ def main() -> None:
                     registro.log("cancelado", h.rotulo, sx, sy, detalhe="botão mudou de lugar")
                     continue
                 recentes[chave] = agora
+                if regra.escolha is not None:
+                    escolhedor.travar(h, regras, agora)
 
                 detalhe = ""
                 if checar_cinza:
@@ -2484,6 +2632,11 @@ def main() -> None:
                 print(f"[{hora}] {tipo} #{acoes}: {h.rotulo} em ({sx}, {sy}){trajeto}"
                       + (f"  [{detalhe}]" if detalhe else ""))
                 registro.log(tipo, h.rotulo, sx, sy, x2, y2, detalhe)
+                if regra.reiniciar_loop:
+                    estado.zerar()
+                    print(f"[{hora}] '{h.rotulo}' clicado: ciclo reiniciado "
+                          f"(partida #{estado.partida}); contadores zerados")
+                    registro.log("inicio_partida", h.rotulo, detalhe="reiniciar_loop")
                 if max_cliques and acoes >= max_cliques:
                     print("Limite de ações atingido.")
                     return

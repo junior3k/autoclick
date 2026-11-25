@@ -1,0 +1,77 @@
+{
+  "_comentario": "Renomeie para botoes.json e troque as chaves pelos nomes dos seus PNGs (sem .png). Chaves que começam com _ são ignoradas, exceto _janela.",
+  "_janela": "Roblox",
+  "maximo": {
+    "acao": "clicar",
+    "auto_detect": true
+  },
+  "jogar_novamente": {
+    "acao": "clicar",
+    "auto_detect": true,
+    "reiniciar_loop": true
+  },
+  "proxima": {
+    "acao": "clicar",
+    "intervalo": 2
+  },
+  "torre": {
+    "acao": "arrastar",
+    "vezes": 1,
+    "destino": {
+      "ancora": "mapa_ref",
+      "offset": [
+        320,
+        -140
+      ]
+    }
+  },
+  "mina": {
+    "acao": "arrastar",
+    "vezes": 1,
+    "destino": {
+      "janela": [
+        0.62,
+        0.55
+      ]
+    },
+    "etapa": "partida"
+  },
+  "_destino_fixo_exemplo": "\"destino\": [980, 540] ainda funciona, mas quebra se a janela mexer ou a câmera andar",
+  "mapa_ref": {
+    "acao": "ancora"
+  },
+  "inicio_partida": {
+    "acao": "inicio"
+  },
+  "trial_folhas": {
+    "acao": "clicar",
+    "auto_detect": true,
+    "escolha": "primeiro",
+    "offset": [
+      55,
+      0
+    ]
+  },
+  "_fluxo": [
+    {
+      "etapa": "lobby",
+      "quando": [
+        "jogar_novamente"
+      ],
+      "timeout": 300,
+      "ao_estourar": "avisar"
+    },
+    {
+      "etapa": "partida",
+      "quando": [
+        "inicio_partida"
+      ],
+      "timeout": 1800,
+      "ao_estourar": "avisar"
+    }
+  ],
+  "erro_conexao": {
+    "acao": "erro",
+    "ao_ver": "parar"
+  }
+}

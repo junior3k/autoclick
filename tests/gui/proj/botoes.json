@@ -1,0 +1,37 @@
+{
+  "_janela": "Roblox",
+  "maximo": {
+    "acao": "clicar",
+    "auto_detect": true
+  },
+  "jogar_novamente": {
+    "acao": "clicar",
+    "auto_detect": true,
+    "reiniciar_loop": true
+  },
+  "torre": {
+    "acao": "arrastar",
+    "destino": {
+      "ancora": "mapa_ref",
+      "offset": [
+        320,
+        -140
+      ]
+    }
+  },
+  "mapa_ref": {
+    "acao": "ancora"
+  },
+  "fantasma": {
+    "acao": "clicar"
+  },
+  "_fluxo": [
+    {
+      "etapa": "lobby",
+      "quando": [
+        "jogar_novamente"
+      ],
+      "timeout": 300
+    }
+  ]
+}

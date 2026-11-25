@@ -1,0 +1,39 @@
+name: testes
+on: [push, pull_request]
+jobs:
+  testes:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Dependências
+        run: pip install mss numpy opencv-python-headless pyright fastapi uvicorn
+      - name: Linux - Xvfb (tela virtual para a janela)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb python3-tk
+      - name: Tipos (pyright)
+        run: pyright autoclick
+      - name: Núcleo
+        shell: bash
+        run: |
+          for f in rodar_testes testes_gravacao testes_escala testes_novos testes_auto testes_operacao testes_robustez testes_manutencao testes_edicao testes_som testes_ed25519 testes_cliente_servidor testes_servidor_nucleo testes_servidor_e2e testes_jogos testes_novidades testes_rotina; do
+            echo "== $f"; python tests/$f.py || exit 1
+          done
+      - name: Janela (Linux, com Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui.py
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui2.py
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui3.py
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui4.py
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui5.py
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui6.py
+        env:
+          AUTOCLICK_SEM_OCR: "1"

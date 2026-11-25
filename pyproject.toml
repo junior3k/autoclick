@@ -1,12 +1,24 @@
 [project]
-name = "autoclick-inteligente"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.14"
+name = "autoclick"
+version = "0.12.0"
+description = "Autoclick inteligente: detecta botões na tela por imagem e clica com regras por botão"
+requires-python = ">=3.10"
 dependencies = [
-    "mss>=10.2.0",
-    "numpy>=2.5.4",
-    "opencv-python-headless>=5.0.0.93",
-    "pytesseract>=0.3.13",
+    "mss",
+    "numpy",
+    "opencv-python-headless",
 ]
+
+[project.optional-dependencies]
+ocr = ["pytesseract"]
+servidor = ["fastapi>=0.110", "uvicorn>=0.29", "starlette>=0.40"]
+
+[project.scripts]
+autoclick = "autoclick.inicio:principal"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["autoclick"]

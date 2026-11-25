@@ -1,10 +1,30 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
+*.egg-info
+wheels/
+
+# Ambientes virtuais
+.venv/
+
+# Build e dados gerados pelo programa
 build/
 dist/
-wheels/
-*.egg-info
+logs/
+historico/
+erros/
+backup/
+_atualizacao/
+autoclick_instalacao.txt
+servidor/dados/
 
-# Virtual environments
-.venv
+# Dados de uso do programa (só da sua máquina)
+/autoclick_gui.json
+/jogos/
+/botoes/
+/botoes.json
+/gravacao.json
+/gravacoes/
+/rotina.json
+/pistas_roblox.txt
+/previa_viva.png

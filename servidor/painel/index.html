@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Painel Autoclick</title>
+<link rel="stylesheet" href="painel.css">
+</head>
+<body>
+<header><h1>Painel Autoclick</h1><span id="estado"></span><button id="sair" hidden>Sair</button></header>
+
+<main id="entrada">
+  <form id="form-token">
+    <label>Token do painel <input id="token" type="password" autocomplete="off" required></label>
+    <button>Entrar</button>
+    <p id="erro-token" class="erro"></p>
+  </form>
+</main>
+
+<main id="app" hidden>
+  <nav id="abas"></nav>
+  <p id="msg" role="status"></p>
+
+  <section data-aba="Resumo"><p>Link público de download: <a id="link-pagina" href="#" target="_blank" rel="noopener"></a></p>
+    <div id="cartoes" class="cartoes"></div>
+    <div id="por-versao" class="dica"></div>
+    <h3>Aviso aos clientes</h3>
+    <form id="form-aviso"><input id="aviso" maxlength="300" placeholder="ex.: manutenção às 22h (vazio limpa)"><button>Salvar</button></form>
+    <h3>Backup</h3><button id="bt-backup">Fazer backup agora</button> <span id="backups"></span>
+  </section>
+
+  <section data-aba="Versões">
+    <p class="dica">Publique pelo PC: <code>publicar.bat</code>. Aqui você promove, retira e controla a liberação gradual.</p>
+    <div class="rolavel"><table id="t-versoes"></table></div>
+  </section>
+
+  <section data-aba="Relatórios"><div class="rolavel"><table id="t-relatorios"></table></div></section>
+  <section data-aba="Eventos"><div class="rolavel"><table id="t-eventos"></table></div></section>
+</main>
+<script src="painel.js"></script>
+</body>
+</html>

@@ -22,8 +22,6 @@ concurrency:
   group: publicar
   cancel-in-progress: false
 env:
-  PYTHONUTF8: "1"
-  PYTHONIOENCODING: utf-8
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
   DOMINIO: ac.cabro.me
 jobs:

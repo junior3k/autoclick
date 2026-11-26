@@ -2,4 +2,4 @@
 
 Exemplo: https://ac.cabro.me  (o programa lê  <endereço>/manifesto.json)  — vazio = este programa não verifica atualizações.
 """
-URL_PADRAO = "https://ac.cabro.me"
+URL_PADRAO = ""

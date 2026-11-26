@@ -255,9 +255,12 @@ check("tempo pausado aparece no resumo", "pausado: 5.0s" in out or "pausado" in 
 print("15) Fluxo com timeout e recuperação de janela")
 cfg4 = tmp / "fx.json"
 cfg4.write_text(json.dumps({"_fluxo": [{"etapa": "jogo", "quando": ["inicio"], "timeout": 0.0001, "ao_estourar": "parar"}], "inicio": {"acao": "marcador"}}), encoding="utf-8")
-it = iter([[H("inicio")]] * 5)
+def _lento():
+    for _ in range(5):
+        real_sleep(0.06)   # o relógio do Windows avança de ~15 em 15 ms: dá folga para o timeout estourar
+        yield [H("inicio")]
+it = _lento()
 _time.sleep = real_sleep; real_t = _time.time
-real_sleep(0.01)
 out, code = rodar_main(["imagem", "--pasta", str(pasta2), "--config", str(cfg4), "--intervalo", "0", "--sem-pausa"])
 _time.sleep = lambda s: None
 check("timeout da etapa com ao_estourar=parar encerra", "passou de" in out and "Fim." in out, out)

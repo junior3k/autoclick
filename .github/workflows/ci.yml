@@ -1,5 +1,8 @@
 name: testes
 on: [push, pull_request]
+env:
+  PYTHONUTF8: "1"          # o Windows usa cp1252 por padrão e quebra ao imprimir setas e acentos
+  PYTHONIOENCODING: utf-8
 jobs:
   testes:
     strategy:

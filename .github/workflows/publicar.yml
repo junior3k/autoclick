@@ -1,0 +1,98 @@
+# Publica uma versão: constrói o .exe num Windows, assina, cria a Release e atualiza o site (GitHub Pages).
+#
+#   git tag v0.13.0 && git push --tags         (a tag precisa ser igual à versão do código)
+#
+# Para refazer SÓ o site a partir de uma Release que já existe (ex.: mudou o aviso em site/config.json
+# ou você apagou uma versão ruim e quer que o site volte à anterior): Actions > publicar > Run workflow
+# e informe a tag. O site nunca regride para uma versão mais velha que a que já está no ar.
+name: publicar
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag já publicada (ex.: v0.13.0) para refazer só o site"
+        required: true
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  DOMINIO: ac.cabro.me
+jobs:
+  publicar:
+    runs-on: windows-latest
+    environment:
+      name: github-pages
+      url: https://ac.cabro.me/
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Confere a tag e a chave
+        env:
+          AC_CHAVE_PRIVADA: ${{ secrets.AC_CHAVE_PRIVADA }}
+        run: |
+          python tools/montar_release.py --tag "$TAG" --so-conferir-tag
+          if [ -z "$AC_CHAVE_PRIVADA" ]; then echo "::error::falta o segredo AC_CHAVE_PRIVADA (Settings > Secrets and variables > Actions)"; exit 1; fi
+          python - <<'PY'
+          import re
+          s = open("autoclick/chave_publica.py", encoding="utf-8").read()
+          if not re.search(r'CHAVE_PUBLICA_HEX = "[0-9a-f]{64}"', s):
+              raise SystemExit("autoclick/chave_publica.py está vazio: rode tools/gerar_chave.py --escrever --url https://SEU-DOMINIO e faça o commit")
+          PY
+      # --- versão nova (tag enviada): testa e constrói ---
+      - name: Dependências
+        if: github.event_name == 'push'
+        run: pip install mss numpy opencv-python-headless pyinstaller
+      - name: Testes do núcleo
+        if: github.event_name == 'push'
+        run: |
+          for f in rodar_testes testes_gravacao testes_escala testes_novos testes_auto testes_operacao testes_robustez testes_manutencao testes_edicao testes_som testes_ed25519 testes_atualizacao testes_release testes_jogos testes_novidades testes_rotina; do
+            echo "== $f"; python tests/$f.py || exit 1
+          done
+      - name: Constrói o .exe
+        if: github.event_name == 'push'
+        run: |
+          pyinstaller autoclick.spec --noconfirm --clean
+          cp botoes.exemplo.json dist/Autoclick/
+      # --- manifesto que está no ar hoje (para não regredir) ---
+      - name: Manifesto atual do site
+        run: curl -fsSL "https://$DOMINIO/manifesto.json" -o _atual.json || echo "(ainda não há site no ar)"
+      - name: Baixa a Release existente (refazer só o site)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --dir _release/arquivos
+      - name: Monta pacotes, manifesto assinado e site
+        id: montar
+        env:
+          AC_CHAVE_PRIVADA: ${{ secrets.AC_CHAVE_PRIVADA }}
+        run: |
+          ATUAL=""; [ -f _atual.json ] && ATUAL="--atual _atual.json"
+          DIST="--dist dist/Autoclick"; [ "${{ github.event_name }}" = "workflow_dispatch" ] && DIST=""
+          python tools/montar_release.py --tag "$TAG" --repo "${{ github.repository }}" --dominio "$DOMINIO" --saida _release $DIST $ATUAL
+      - name: Cria a Release com os arquivos
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" _release/arquivos/* --title "Autoclick ${{ steps.montar.outputs.versao }}" --notes-file _release/notas.md
+      - uses: actions/configure-pages@v5
+        if: steps.montar.outputs.deploy == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.montar.outputs.deploy == 'true'
+        with:
+          path: _release/site
+      - uses: actions/deploy-pages@v4
+        if: steps.montar.outputs.deploy == 'true'

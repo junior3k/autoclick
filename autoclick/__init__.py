@@ -123,4 +123,4 @@ Segurança:
     - Use apenas em apps/sites onde automação é permitida (veja os termos de uso).
 """
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"

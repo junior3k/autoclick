@@ -1,9 +1,8 @@
 # pyright: basic
 """Atualização do programa: verificar uma nova versão e aplicar um pacote .zip com backup.
 
-Não há servidor próprio: você informa a URL de um "manifesto" JSON
-    {"versao": "0.6.0", "url": "https://.../autoclick.zip", "notas": "o que mudou"}
-(pode ser um arquivo no GitHub/Drive/seu site) ou aplica um .zip que já baixou.
+O site de downloads (GitHub Pages) serve um `manifesto.json` estático e assinado; o pacote em si
+vem de uma Release do GitHub. Também dá para aplicar um .zip que você já baixou.
 Seus dados nunca são sobrescritos (botoes/, botoes.json, perfis/, gravações, histórico...).
 Só a biblioteca padrão.
 """
@@ -185,7 +184,7 @@ def listar_backups(raiz: str) -> list[str]:
 
 
 # =========================================================================== #
-# Atualização por servidor público (assinatura Ed25519, sem convite)
+# Atualização pelo site de downloads (manifesto estático assinado com Ed25519, sem convite)
 # =========================================================================== #
 PREFIXO_ASSINATURA = "autoclick-v1"
 HOSTS_LOCAIS = ("127.0.0.1", "localhost", "::1", "[::1]")
@@ -226,41 +225,18 @@ def url_permitida(url: str) -> bool:
 
 
 class Servidor:
-    """Endereço base da API (ex.: https://ac.cabro.me/download/api/v1). Sem convite nem chave:
-    qualquer instalação pode consultar e baixar. `instalacao` é um número aleatório local (só
-    serve para contar instalações ativas; não identifica ninguém)."""
+    """Endereço do site de downloads (ex.: https://ac.cabro.me), que serve o `manifesto.json` estático
+    (GitHub Pages). Sem convite, sem conta e sem enviar nada sobre quem usa."""
 
-    def __init__(self, url: str, canal: str = "estavel", instalacao: str = "") -> None:
+    def __init__(self, url: str) -> None:
         self.url = url.strip().rstrip("/")
-        self.canal = canal if canal in ("estavel", "beta") else "estavel"
-        self.instalacao = instalacao
 
     @property
     def valido(self) -> bool:
         return url_permitida(self.url)
 
 
-ARQ_INSTALACAO = "autoclick_instalacao.txt"
-
-
-def id_instalacao(raiz: str = ".") -> str:
-    """Número aleatório desta instalação (criado na primeira vez e guardado ao lado do programa)."""
-    p = Path(raiz) / ARQ_INSTALACAO
-    try:
-        v = p.read_text(encoding="utf-8").strip()
-        if re.fullmatch(r"[0-9a-f]{16}", v):
-            return v
-    except OSError:
-        pass
-    v = os.urandom(8).hex()
-    try:
-        p.write_text(v, encoding="utf-8")
-    except OSError:
-        pass
-    return v
-
-
-def servidor_padrao(canal: str = "estavel", raiz: str = ".") -> Optional[Servidor]:
+def servidor_padrao() -> Optional[Servidor]:
     """O servidor embutido no programa (ou o de AUTOCLICK_SERVIDOR_URL). None se não houver."""
     url = os.environ.get("AUTOCLICK_SERVIDOR_URL", "").strip()
     if not url:
@@ -271,31 +247,45 @@ def servidor_padrao(canal: str = "estavel", raiz: str = ".") -> Optional[Servido
             url = ""
     if not url:
         return None
-    srv = Servidor(url, canal, id_instalacao(raiz))
+    srv = Servidor(url)
     return srv if srv.valido else None
 
 
-def _pedir(srv: Servidor, caminho: str, params: Optional[dict[str, str]] = None, metodo: str = "GET",
-           corpo: Optional[bytes] = None, cabecalhos: Optional[dict[str, str]] = None,
-           timeout: float = 15.0) -> Any:
-    """Abre uma resposta HTTP do servidor (o chamador fecha). Traduz erros em ErroServidor."""
-    if not srv.valido:
-        raise ErroServidor("este programa não tem um servidor de atualizações configurado")
-    url = srv.url + caminho
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
+# Onde um pacote pode ser baixado: Releases do GitHub (com os redirecionamentos dele) e o próprio site.
+# O link NÃO é assinado, mas o SHA-256 e o tamanho são (e são conferidos): um link trocado só faz o
+# download falhar, nunca instala algo que o administrador não assinou.
+HOSTS_PACOTE = ("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+
+
+def url_pacote_permitida(url: str, srv: Optional[Servidor] = None) -> bool:
+    if not url_permitida(url):
+        return False
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if host in HOSTS_PACOTE:
+        return True
+    if srv is not None and host == (urllib.parse.urlparse(srv.url).hostname or "").lower():
+        return True
+    return urllib.parse.urlparse(url).scheme == "http" and host in [h.strip("[]") for h in HOSTS_LOCAIS]
+
+
+def _abrir(url: str, cabecalhos: Optional[dict[str, str]] = None, timeout: float = 15.0) -> Any:
+    """Abre uma resposta HTTP (o chamador fecha). Traduz erros em ErroServidor."""
     from . import __version__
     h = {"User-Agent": f"autoclick/{__version__}"}
-    if srv.instalacao:
-        h["X-Instalacao"] = srv.instalacao
     h.update(cabecalhos or {})
-    req = urllib.request.Request(url, data=corpo, method=metodo, headers=h)
+    req = urllib.request.Request(url, headers=h)
     try:
         return urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as e:
         raise ErroServidor(mensagem_http(e.code), e.code)
     except (urllib.error.URLError, OSError, TimeoutError) as e:
         raise ErroServidor(descrever_erro(e))
+
+
+def _pedir(srv: Servidor, caminho: str, timeout: float = 15.0) -> Any:
+    if not srv.valido:
+        raise ErroServidor("este programa não tem um servidor de atualizações configurado")
+    return _abrir(srv.url + caminho, timeout=timeout)
 
 
 def mensagem_http(codigo: int) -> str:
@@ -338,7 +328,7 @@ def descrever_erro(e: BaseException) -> str:
         return "Sem espaço em disco para baixar ou instalar a atualização. Libere espaço e tente de novo."
     if isinstance(e, urllib.error.URLError) or isinstance(e, OSError):
         return f"Não consegui falar com o servidor ({motivo}). Confira a internet e tente de novo."
-    return f"Algo inesperado aconteceu ({type(e).__name__}: {e}). Se repetir, use “Enviar relatório”."
+    return f"Algo inesperado aconteceu ({type(e).__name__}: {e}). Se repetir, use “Salvar relatório” (Configurações → Atualizações) e mande o arquivo a quem mantém o programa."
 
 
 def conferir_espaco(pasta: str, tamanho: int, fator: float = 3.0) -> None:
@@ -362,8 +352,7 @@ def consultar(srv: Servidor, versao_atual: str, artefato: Optional[str] = None,
     """
     artefato = artefato or ("exe" if esta_congelado() else "fonte")
     chave = chave_publica_hex if chave_publica_hex is not None else chave_publica_embutida()
-    with _pedir(srv, "/manifesto", {"atual": versao_atual, "artefato": artefato, "canal": srv.canal,
-                                    "so": sys.platform}) as r:
+    with _pedir(srv, "/manifesto.json") as r:
         try:
             d = json.loads(r.read(1_000_000).decode("utf-8"))
         except ValueError:
@@ -372,14 +361,14 @@ def consultar(srv: Servidor, versao_atual: str, artefato: Optional[str] = None,
         raise ErroServidor("resposta inválida do servidor")
     saida: dict[str, Any] = {"nova": False, "obrigatoria": False,
                              "mensagem": str(d.get("mensagem", "")), "versao_atual": versao_atual}
-    a = d.get("atualizacao")
+    a = (d.get("atualizacoes") or {}).get(artefato) if isinstance(d.get("atualizacoes"), dict) else None
     if not a:
         return saida
     try:
         versao, art = str(a["versao"]), str(a["artefato"])
         canal, minima = str(a.get("canal", "estavel")), str(a.get("minima", "0"))
         sha, tam = str(a["sha256"]), int(a["tamanho"])
-        assinatura = str(a["assinatura"])
+        assinatura, url_pacote = str(a["assinatura"]), str(a["url"])
     except (KeyError, TypeError, ValueError):
         raise ErroServidor("manifesto incompleto")
     if not mais_nova(versao, versao_atual):
@@ -393,9 +382,11 @@ def consultar(srv: Servidor, versao_atual: str, artefato: Optional[str] = None,
                            "Nada foi instalado.")
     if art != artefato:
         raise ErroServidor("o servidor ofereceu um tipo de pacote inesperado")
+    if not url_pacote_permitida(url_pacote, srv):
+        raise ErroServidor("o manifesto aponta para um endereço de download não permitido")
     saida.update({"nova": True, "versao": versao, "canal": canal, "artefato": art, "sha256": sha,
                   "tamanho": tam, "minima": minima, "notas": str(a.get("notas", "")),
-                  "assinatura": assinatura, "obrigatoria": mais_nova(minima, versao_atual)})
+                  "assinatura": assinatura, "url": url_pacote, "obrigatoria": mais_nova(minima, versao_atual)})
     return saida
 
 
@@ -415,8 +406,10 @@ def baixar_pacote(srv: Servidor, info: dict[str, Any], pasta: str,
         ja = 0
     cab = {"Range": f"bytes={ja}-"} if ja else {}
     if ja != total:
-        with _pedir(srv, f"/pacote/{urllib.parse.quote(str(info['versao']))}/{info['artefato']}",
-                    params={"canal": srv.canal}, cabecalhos=cab, timeout=30.0) as r:
+        url_pacote = str(info.get("url", ""))
+        if not url_pacote_permitida(url_pacote, srv):
+            raise ErroServidor("endereço de download não permitido")
+        with _abrir(url_pacote, cab, timeout=30.0) as r:
             if ja and r.status != 206:  # o servidor ignorou o Range: recomeça do zero
                 ja = 0
             with open(parcial, "ab" if ja else "wb") as f:

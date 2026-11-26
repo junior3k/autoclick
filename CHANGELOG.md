@@ -8,6 +8,13 @@
 - Novo ícone do aplicativo (janela, barra de tarefas e executável).
 - Acentos corretos no terminal do Windows.
 
+## 0.13.0
+- Download e atualizações agora ficam 100% no GitHub, sem servidor ligado no PC: a página de download é servida pelo GitHub Pages e os arquivos vêm das Releases do repositório (24 horas por dia).
+- Publicar uma versão é criar uma tag (`git tag v0.13.0 && git push --tags`): o GitHub testa, constrói o .exe, assina, cria a Release e atualiza o site sozinho. A assinatura Ed25519 das atualizações continua sendo conferida pelo programa.
+- Removidos, por dependerem de um servidor ligado: painel, canal beta, percentual de liberação, contagem de instalações e envio de relatórios. “Enviar relatório” virou “Salvar relatório…” (um .zip que você manda a quem mantém o programa).
+- `site/config.json` permite mostrar um aviso a todos e exigir uma versão mínima.
+- Novas ferramentas: `tools/gerar_chave.py` (chaves, uma vez) e `tools/montar_release.py`.
+
 ## 0.12.0
 - Sons por tipo de ação, cada um com o seu liga/desliga em Configurações → Segurança e avisos e um botão "Ouvir": início e fim da gravação (duas notas graves, subindo e descendo), início e fim da reprodução e das rotinas (três notas, subindo e descendo), fim de volta (o sino de sempre) e um tique opcional a cada segundo da contagem inicial.
 - Todos seguem o estilo e o volume escolhidos (sino, gota, marimba, discreto ou seu .wav; o tique é sempre gerado pelo programa).

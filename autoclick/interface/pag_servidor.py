@@ -1,5 +1,5 @@
 # pyright: basic
-"""Cartão “Atualizações” (Configurações): verificar, atualizar, enviar relatório."""
+"""Cartão “Atualizações” (Configurações): verificar, atualizar, salvar relatório."""
 from __future__ import annotations
 
 import os
@@ -37,15 +37,14 @@ class ControleServidor:
         return os.getcwd()
 
     def servidor(self) -> Optional[atualizacao.Servidor]:
-        canal = "beta" if self.app.g.canal_beta else "estavel"
-        return atualizacao.servidor_padrao(canal, self.raiz())
+        return atualizacao.servidor_padrao()
 
     def texto_servidor(self) -> str:
         s = self.servidor()
         if s is None:
             return "Este programa não tem servidor de atualizações configurado."
         host = s.url.split("//", 1)[-1].split("/", 1)[0]
-        return f"Servidor de atualizações: {host} · canal {s.canal}"
+        return f"Atualizações de: {host}"
 
     def pintar(self) -> None:
         if self.lbl_srv is not None:
@@ -82,7 +81,7 @@ class ControleServidor:
             self.app.definir_nova_versao(None)
             return
         self.app.definir_nova_versao(d["versao"])
-        self._msg(f"Nova versão {d['versao']} ({d['canal']})."
+        self._msg(f"Nova versão {d['versao']}."
                   + (" OBRIGATÓRIA." if d["obrigatoria"] else "") + f" {d.get('notas', '')}")
         if self.pronto and self.pronto["info"]["versao"] == d["versao"]:
             self.app.definir_nova_versao(d["versao"], pronta=True)
@@ -259,52 +258,45 @@ class ControleServidor:
             return ("erro", atualizacao.descrever_erro(e))
 
     # ---- relatório ---------------------------------------------------- #
-    def enviar_relatorio(self) -> None:
-        srv = self.servidor()
-        if srv is None:
-            messagebox.showinfo("Relatório", "Este programa não tem servidor configurado.", parent=self.app.raiz)
-            return
+    def salvar_relatorio(self) -> None:
+        """Monta o relatório de problema num .zip para a pessoa mandar a quem mantém o programa."""
+        from tkinter import filedialog
         itens = relatorio.conteudo(self.raiz())
         if not messagebox.askyesno(
-                "Enviar relatório de problema",
-                "Será enviado ao administrador do servidor:\n\n  • " + "\n  • ".join(itens)
-                + "\n\nNão vão botões, perfis, gravações nem webhook.\nEnviar?", parent=self.app.raiz):
+                "Salvar relatório de problema",
+                "O arquivo terá:\n\n  • " + "\n  • ".join(itens)
+                + "\n\nNão vão botões, perfis, gravações nem webhook. Nada é enviado: você escolhe a quem "
+                "mandar o arquivo.\nSalvar?", parent=self.app.raiz):
             return
-        raiz = self.raiz()
-
-        def trabalho() -> Any:
-            z = os.path.join(tempfile.mkdtemp(), "relatorio.zip")
-            relatorio.montar(z, raiz)
-            return relatorio.enviar(srv, z, f"v{__version__} {sys.platform}")
-
-        self._msg("Enviando relatório…")
-        self.app.em_segundo_plano(lambda: self._seguro(trabalho), self._fim_relatorio)
-
-    def _fim_relatorio(self, r: Any) -> None:
-        estado, d = r
-        self._msg(f"✔ Relatório enviado (nº {d})." if estado == "ok" else "✖ " + str(d))
-        if estado != "ok":
-            self.app.log_texto(f"✖ Relatório não enviado: {d}\n", "erro")
+        destino = filedialog.asksaveasfilename(parent=self.app.raiz, title="Salvar relatório",
+                                               defaultextension=".zip", initialfile="relatorio_autoclick.zip",
+                                               filetypes=[("Arquivo zip", "*.zip")])
+        if not destino:
+            return
+        try:
+            relatorio.montar(destino, self.raiz(), f"v{__version__} {sys.platform}")
+        except Exception as e:
+            self._msg("✖ " + atualizacao.descrever_erro(e))
+            return
+        self._msg(f"✔ Relatório salvo em {destino}.")
 
 
 def montar_cartao(pagina: Any, g: Any, a: Any, c: Any) -> Cartao:
     ctl = pagina.app.up
     pagina.servidor_ctl = ctl
     cart = Cartao(g, pagina.t, "Atualizações",
-                  "Atualizações assinadas, direto do servidor. Seus dados nunca são sobrescritos.")
+                  "Atualizações assinadas, baixadas do site de downloads. Seus dados nunca são sobrescritos.")
     ctl.lbl_srv = rotulo(cart.corpo, pagina.t, ctl.texto_servidor(), muted=True, anchor="w", justify="left",
                          wraplength=320)
     cart.linha_cheia(ctl.lbl_srv)
     cart.linha_cheia(marcar(cart.corpo, "Verificar novidades ao abrir o programa", a.var("atualizar_ao_abrir")), (6, 0))
     cart.linha_cheia(marcar(cart.corpo, "Instalar a atualização já baixada ao fechar o programa",
                             a.var("atualizar_ao_fechar")), (2, 0))
-    cart.linha_cheia(marcar(cart.corpo, "Receber também versões beta (em teste)", a.var("canal_beta"),
-                            lambda: ctl.pintar()), (2, 0))
     import tkinter as tk
     b2 = tk.Frame(cart.corpo, bg=c["card"]); cart.linha_cheia(b2, (8, 0))
     botao(b2, "Verificar atualização", lambda: ctl.verificar(), "Accent", True).pack(side="left")
     botao(b2, "Atualizar agora", ctl.atualizar, "Ghost", True).pack(side="left", padx=8)
-    botao(b2, "Enviar relatório…", ctl.enviar_relatorio, "Ghost", True).pack(side="left")
+    botao(b2, "Salvar relatório…", ctl.salvar_relatorio, "Ghost", True).pack(side="left")
     ctl.lbl = rotulo(cart.corpo, pagina.t, "", muted=True, anchor="w", justify="left", wraplength=320)
     cart.linha_cheia(ctl.lbl, (8, 0))
     return cart

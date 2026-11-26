@@ -92,7 +92,6 @@ class Geral:
     f11_rotina: bool = False  # F11/bandeja iniciam a rotina do jogo em vez da gravação
     atualizar_ao_abrir: bool = True
     atualizar_ao_fechar: bool = True  # instala ao fechar a atualização que já foi baixada
-    canal_beta: bool = False  # receber também versões beta
 
 
 def carregar_geral(caminho: str = ARQ_GUI) -> Geral:

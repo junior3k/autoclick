@@ -1,7 +1,7 @@
 # pyright: basic
 """Relatório de problema: junta o que ajuda a diagnosticar (e NADA mais) num .zip pequeno.
 
-Só é enviado quando a pessoa pede e confirma. O que entra:
+Nada é enviado sozinho: a pessoa salva o .zip e escolhe a quem mandar. O que entra:
   - as últimas linhas de logs/autoclick.log
   - o histórico de sessões (historico/sessoes.jsonl, últimas linhas)
   - até 3 capturas recentes de erro (erros/*.png)
@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import __version__
-from .atualizacao import ErroServidor, Servidor, _pedir  # type: ignore[attr-defined]
+from .atualizacao import ErroServidor
 
 LIMITE_BYTES = 4 * 1024 * 1024
 SEGREDOS = ("webhook", "servidor_chave", "chave")
@@ -94,15 +94,3 @@ def montar(destino: str, raiz: str = ".", motivo: str = "") -> str:
     if os.path.getsize(destino) > LIMITE_BYTES:
         raise ErroServidor("o relatório ficou maior que 4 MB")
     return destino
-
-
-def enviar(srv: Servidor, zip_path: str, resumo: str = "") -> int:
-    """Envia o relatório ao servidor. Devolve o número dele."""
-    import urllib.parse
-    corpo = Path(zip_path).read_bytes()
-    with _pedir(srv, "/relatorio", metodo="POST", corpo=corpo, timeout=60.0, cabecalhos={
-            "Content-Type": "application/zip", "X-Resumo": urllib.parse.quote(resumo[:200])}) as r:
-        try:
-            return int(json.loads(r.read(10_000).decode("utf-8")).get("id", 0))
-        except ValueError:
-            return 0

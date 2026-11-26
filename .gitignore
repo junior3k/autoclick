@@ -3,22 +3,20 @@ __pycache__/
 *.py[oc]
 *.egg-info
 wheels/
-
-# Ambientes virtuais
 .venv/
 
 # Build e dados gerados pelo programa
 build/
 dist/
+_release/
 logs/
 historico/
 erros/
 backup/
 _atualizacao/
 autoclick_instalacao.txt
-servidor/dados/
 
-# Dados de uso do programa (só da sua máquina)
+# Dados de uso (só da sua máquina; tire daqui o que quiser versionar)
 /autoclick_gui.json
 /jogos/
 /botoes/

@@ -1,0 +1,13 @@
+{
+  "modo": "imagem",
+  "janela": "Roblox",
+  "pasta": "botoes",
+  "config": "botoes.json",
+  "intervalo": 1.0,
+  "variacao": 0.15,
+  "log": "log.csv",
+  "relatorio": "relatorio.md",
+  "painel": 60,
+  "inatividade": 600,
+  "ao_travar": "avisar"
+}

@@ -1,5 +1,5 @@
-"""Endereço do servidor de atualizações embutido no programa (preenchido por `servidor instalar`).
+"""Endereço do site de downloads embutido no programa (preenchido por `tools/gerar_chave.py --escrever --url ...`).
 
-Exemplo: https://ac.cabro.me/download/api/v1  — vazio = este programa não verifica atualizações.
+Exemplo: https://ac.cabro.me  (o programa lê  <endereço>/manifesto.json)  — vazio = este programa não verifica atualizações.
 """
 URL_PADRAO = ""

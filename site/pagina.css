@@ -13,3 +13,5 @@ ol{text-align:left;margin:22px auto 0;padding-left:22px}
 details{text-align:left;margin-top:16px;font-size:14px;color:var(--mudo)}
 code{word-break:break-all;font-size:12px}
 .vazio{color:var(--mudo)}
+.aviso{background:#fff4d6;color:#5c4400;border-radius:10px;padding:10px 12px;margin:0 0 16px;font-size:14px}
+@media (prefers-color-scheme:dark){.aviso{background:#3a3014;color:#f3dc8a}}

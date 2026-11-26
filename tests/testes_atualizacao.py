@@ -1,4 +1,4 @@
-"""Cliente de atualização contra um servidor FALSO (http.server): protocolo, assinatura, download."""
+"""Cliente de atualização contra um site estático FALSO (http.server): manifesto, assinatura, download."""
 import hashlib, http.server, io, json, os, sys, tempfile, threading, zipfile
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,28 +22,25 @@ PACOTE = buf.getvalue(); SHA = hashlib.sha256(PACOTE).hexdigest()
 estado = {"corromper": False, "ignorar_range": False, "parar_em": None, "chave_ok": True, "assinar_msg": None,
           "pedidos": []}
 
-def manifesto(versao="9.9.9", canal="estavel", artefato="fonte", minima="0", sha=SHA, tam=len(PACOTE),
+def manifesto(versao="9.9.9", artefato="fonte", minima="0", sha=SHA, tam=len(PACOTE), url=None,
               assinada=("9.9.9", "fonte", SHA, len(PACOTE))):
     msg = estado["assinar_msg"] or A.mensagem_do_pacote(*assinada)
     sig = E.assinar(SEM, msg).hex()
-    return {"nome": "Fulano", "atualizacao": {"versao": versao, "canal": canal, "artefato": artefato, "sha256": sha,
-            "tamanho": tam, "minima": minima, "assinatura": sig, "notas": "novidades"}}
+    url = url or f"http://127.0.0.1:{srv_http.server_port}/arquivos/pacote.zip"
+    return {"mensagem": "aviso de teste", "atualizacoes": {artefato: {
+        "versao": versao, "canal": "estavel", "artefato": artefato, "sha256": sha, "tamanho": tam, "minima": minima,
+        "assinatura": sig, "notas": "novidades", "url": url}}}
 
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
-    def _auth(self):
-        estado["cabecalhos"] = dict(self.headers)
-        if self.headers.get("Authorization"):      # sem convite: o programa NUNCA manda credencial
-            self.send_response(400); self.end_headers(); return False
-        return True
     def do_GET(self):
         estado["pedidos"].append(self.path)
-        if not self._auth(): return
-        if self.path.startswith("/ac/v1/manifesto"):
+        estado["cabecalhos"] = dict(self.headers)
+        if self.path == "/manifesto.json":
             corpo = json.dumps(estado.get("manifesto") or manifesto()).encode()
             self.send_response(200); self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(corpo))); self.end_headers(); self.wfile.write(corpo)
-        elif self.path.startswith("/ac/v1/pacote/"):
+        elif self.path.startswith("/arquivos/"):
             dados = PACOTE if not estado["corromper"] else PACOTE[:-1] + b"X"
             r = self.headers.get("Range"); ini = 0; cod = 200
             if r and not estado["ignorar_range"]:
@@ -58,54 +55,67 @@ class H(http.server.BaseHTTPRequestHandler):
 
 srv_http = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv_http.serve_forever, daemon=True).start()
-URL = f"http://127.0.0.1:{srv_http.server_port}/ac/v1"
-S = A.Servidor(URL, "estavel", "0123456789abcdef")
+URL = f"http://127.0.0.1:{srv_http.server_port}"
+S = A.Servidor(URL)
 tmp = Path(tempfile.mkdtemp())
 
 print("1) Convite e URL")
 check("https ok, http público recusado, http local ok", A.url_permitida("https://x.com/a") and not A.url_permitida("http://x.com/a") and A.url_permitida("http://127.0.0.1:1/a") and not A.url_permitida("ftp://x"))
 check("não há mais convite no módulo", not hasattr(A, "ler_convite") and not hasattr(A, "salvar_convite"))
-check("http fora de localhost recusado", not A.Servidor("http://evil.com/x").valido and A.Servidor("https://ac.cabro.me/download/api/v1").valido)
+check("http fora de localhost recusado", not A.Servidor("http://evil.com/x").valido and A.Servidor("https://ac.cabro.me").valido)
 check("localhost http permitido (testes)", A.Servidor("http://127.0.0.1:1/x").valido)
 os.environ["AUTOCLICK_SERVIDOR_URL"] = URL
-sp = A.servidor_padrao("beta", str(tmp))
-check("servidor_padrao usa a URL embutida/ambiente e o canal", sp is not None and sp.url == URL and sp.canal == "beta")
-check("id de instalação: 16 hex, estável entre chamadas", len(sp.instalacao) == 16 and A.id_instalacao(str(tmp)) == sp.instalacao)
+sp = A.servidor_padrao()
+check("servidor_padrao usa a URL embutida/ambiente", sp is not None and sp.url == URL)
+check("não existem mais canal nem número de instalação", not hasattr(sp, "canal") and not hasattr(sp, "instalacao") and not hasattr(A, "id_instalacao"))
 del os.environ["AUTOCLICK_SERVIDOR_URL"]
 import autoclick.servidor_padrao as _SP
-_url0 = _SP.URL_PADRAO; _SP.URL_PADRAO = ""   # a instalação do servidor preenche este valor no seu PC
-try: check("sem URL nenhuma: None", A.servidor_padrao("estavel", str(tmp)) is None)
+_url0 = _SP.URL_PADRAO; _SP.URL_PADRAO = ""   # o `gerar_chave --escrever` preenche este valor
+try: check("sem URL nenhuma: None", A.servidor_padrao() is None)
 finally: _SP.URL_PADRAO = _url0
+print("1b) Quem pode hospedar o pacote")
+check("GitHub e o próprio site", A.url_pacote_permitida("https://github.com/u/r/releases/download/v1/a.zip", S)
+      and A.url_pacote_permitida("https://objects.githubusercontent.com/x", S) and A.url_pacote_permitida(f"{URL}/arquivos/a.zip", S))
+check("outros hosts e http público recusados", not A.url_pacote_permitida("https://evil.com/a.zip", S)
+      and not A.url_pacote_permitida("http://github.com/a.zip", S) and not A.url_pacote_permitida("ftp://github.com/a", S)
+      and not A.url_pacote_permitida("https://github.com.evil.com/a.zip", S))
 i = A.consultar(S, "0.5.0", "fonte", PUB)
 check("nova versão reconhecida", i["nova"] and i["versao"] == "9.9.9" and not i["obrigatoria"])
-check("envia atual/artefato/canal", any("atual=0.5.0" in p and "artefato=fonte" in p and "canal=estavel" in p for p in estado["pedidos"]))
+check("pede só o manifesto estático (nada sobre quem usa)", estado["pedidos"][-1] == "/manifesto.json" and "?" not in estado["pedidos"][-1])
+check("aviso do manifesto repassado", i["mensagem"] == "aviso de teste" and i["url"].endswith("/arquivos/pacote.zip"))
 check("já na última: nada", not A.consultar(S, "9.9.9", "fonte", PUB)["nova"])
 estado["manifesto"] = manifesto(minima="9.0.0")
 check("versão mínima => obrigatória", A.consultar(S, "0.5.0", "fonte", PUB)["obrigatoria"])
 estado["manifesto"] = None
-for nome, mut in (("sha adulterado no manifesto", lambda m: m["atualizacao"].__setitem__("sha256", "0" * 64)),
-                  ("versão adulterada", lambda m: m["atualizacao"].__setitem__("versao", "9.9.8")),
-                  ("tamanho adulterado", lambda m: m["atualizacao"].__setitem__("tamanho", 5)),
-                  ("tipo de pacote adulterado", lambda m: m["atualizacao"].__setitem__("artefato", "exe"))):
+for nome, mut in (("sha adulterado no manifesto", lambda m: m["atualizacoes"]["fonte"].__setitem__("sha256", "0" * 64)),
+                  ("versão adulterada", lambda m: m["atualizacoes"]["fonte"].__setitem__("versao", "9.9.8")),
+                  ("tamanho adulterado", lambda m: m["atualizacoes"]["fonte"].__setitem__("tamanho", 5)),
+                  ("tipo de pacote adulterado", lambda m: m["atualizacoes"]["fonte"].__setitem__("artefato", "exe"))):
     m = manifesto(minima="0"); mut(m); estado["manifesto"] = m
     try: A.consultar(S, "0.5.0", "fonte", PUB); check(nome + " é recusado", False)
     except A.ErroServidor as e: check(nome + " é recusado", "ASSINATURA" in str(e))
-estado["manifesto"] = manifesto(canal="beta", minima="0.1.0")
+estado["manifesto"] = manifesto(minima="0.1.0")
 i2 = A.consultar(S, "0.5.0", "fonte", PUB)
-check("canal/mínima são metadados fora da assinatura (não mudam o que é instalado)", i2["nova"] and i2["sha256"] == SHA)
+check("mínima é metadado fora da assinatura (não muda o que é instalado)", i2["nova"] and i2["sha256"] == SHA)
+estado["manifesto"] = manifesto(url="https://evil.com/pacote.zip")
+try: A.consultar(S, "0.5.0", "fonte", PUB); check("manifesto com link de download estranho é recusado", False)
+except A.ErroServidor as e: check("manifesto com link de download estranho é recusado", "não permitido" in str(e))
+estado["manifesto"] = {"mensagem": "", "atualizacoes": {}}
+check("sem pacote para este tipo: nada", not A.consultar(S, "0.5.0", "fonte", PUB)["nova"])
+estado["manifesto"] = {"mensagem": "", "atualizacoes": {"fonte": {"versao": "9.9.9"}}}
+try: A.consultar(S, "0.5.0", "fonte", PUB); check("manifesto incompleto", False)
+except A.ErroServidor as e: check("manifesto incompleto", "incompleto" in str(e))
 estado["manifesto"] = None
 OUTRA = E.chave_publica(E.gerar_semente()).hex()
 try: A.consultar(S, "0.5.0", "fonte", OUTRA); check("assinatura de outra chave recusada", False)
 except A.ErroServidor: check("assinatura de outra chave recusada", True)
 try: A.consultar(S, "0.5.0", "fonte", ""); check("sem chave embutida, recusa", False)
 except A.ErroServidor as e: check("sem chave embutida, recusa", "chave de confiança" in str(e))
-try: A.consultar(S, "0.5.0", "exe", PUB); check("tipo de pacote diferente recusado", False)
-except A.ErroServidor: check("tipo de pacote diferente recusado", True)
+check("pedir outro tipo de pacote (exe) quando só há fonte: nada", not A.consultar(S, "0.5.0", "exe", PUB)["nova"])
 i0 = A.consultar(S, "0.5.0", "fonte", PUB)
-check("nenhuma credencial enviada, mas identifica a instalação", "Authorization" not in estado["cabecalhos"] and estado["cabecalhos"].get("X-Instalacao") == "0123456789abcdef")
-check("pedido leva o canal", any("canal=estavel" in x for x in estado["pedidos"]))
-try: A.consultar(A.Servidor("http://127.0.0.1:1/ac/v1"), "0.5.0", "fonte", PUB); check("servidor fora do ar", False)
-except A.ErroServidor as e: check("servidor fora do ar: mensagem amigável", "servidor" in str(e))
+check("nenhuma credencial nem identificador de instalação enviados", "Authorization" not in estado["cabecalhos"] and "X-Instalacao" not in estado["cabecalhos"])
+try: A.consultar(A.Servidor("http://127.0.0.1:1"), "0.5.0", "fonte", PUB); check("servidor fora do ar", False)
+except A.ErroServidor as e: check("servidor fora do ar: mensagem amigável", "servidor" in str(e).lower() or "conex" in str(e).lower() or "internet" in str(e).lower(), str(e))
 
 print("3) Download")
 info = A.consultar(S, "0.5.0", "fonte", PUB)
@@ -162,4 +172,4 @@ dest = tmp / "instalado"; dest.mkdir()
 cmd = A.preparar_troca_exe(str(zp), str(dest), pid=1)
 check("prepara pasta e script", (dest / "_atualizacao" / "novo" / "Autoclick.exe").is_file() and Path(cmd).is_file())
 srv_http.shutdown()
-print(f"\n{ok} verificações passaram (cliente x servidor falso).")
+print(f"\n{ok} verificações passaram (cliente x site estático falso).")

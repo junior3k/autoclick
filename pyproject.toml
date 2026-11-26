@@ -1,6 +1,6 @@
 [project]
 name = "autoclick"
-version = "0.12.0"
+version = "0.13.0"
 description = "Autoclick inteligente: detecta botões na tela por imagem e clica com regras por botão"
 requires-python = ">=3.10"
 dependencies = [
@@ -11,7 +11,6 @@ dependencies = [
 
 [project.optional-dependencies]
 ocr = ["pytesseract"]
-servidor = ["fastapi>=0.110", "uvicorn>=0.29", "starlette>=0.40"]
 
 [project.scripts]
 autoclick = "autoclick.inicio:principal"

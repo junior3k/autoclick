@@ -72,9 +72,9 @@ O tempo entre a última ação e o momento em que você encerra a gravação (F9
 Cada tipo de som liga e desliga sozinho: fim de volta, início/fim da gravação, início/fim da reprodução (e das rotinas) e um tique na contagem inicial. Os de gravação e reprodução soam diferentes (duas notas graves x três notas), subindo ao iniciar e descendo ao terminar. Use “Ouvir” para testar.
 Configurações → Segurança e avisos: escolha o estilo (sino, gota, marimba, discreto ou um .wav seu), o volume e use “Ouvir”. O som toca ao concluir cada volta do loop; liga/desliga na barra de mensagens ou na bandeja, a qualquer momento."""),
     ("Atualizações e relatórios", """\
-Não precisa de convite nem de senha. Em Configurações → Atualizações, “Verificar atualização” pergunta ao servidor se há versão nova; “Verificar ao abrir” faz isso sozinho; a versão nova é baixada em segundo plano e só instala quando você mandar, quando o programa estiver parado (ele pergunta) ou ao fechar. Depois de atualizar, uma janela mostra “O que mudou” uma única vez. Marque “Receber também versões beta” se quiser testar versões novas antes dos outros.
+Não precisa de convite nem de senha. Em Configurações → Atualizações, “Verificar atualização” consulta o site de downloads para saber se há versão nova; “Verificar ao abrir” faz isso sozinho; a versão nova é baixada em segundo plano e só instala quando você mandar, quando o programa estiver parado (ele pergunta) ou ao fechar. Depois de atualizar, uma janela mostra “O que mudou” uma única vez.
 Toda atualização vem ASSINADA pelo autor e é recusada se a assinatura não bater. Seus botões, regras, perfis e gravações nunca são sobrescritos, e se a versão nova não abrir a anterior volta sozinha. Uma versão marcada como obrigatória aparece com esse aviso.
-“Enviar relatório” manda ao autor só o log recente, o histórico, até 3 capturas de erro e dados do sistema; você vê a lista e confirma antes. Nunca vão webhook, botões nem gravações."""),
+“Salvar relatório…” cria um .zip com só o log recente, o histórico, até 3 capturas de erro e dados do sistema (você vê a lista e confirma antes) e NÃO envia nada: você escolhe a quem mandar o arquivo. Nunca vão webhook, botões nem gravações."""),
     ("Arquivos criados", """\
 • botoes/ e botoes.json — imagens e regras
 • gravacao.json (+ .bak ao editar) — suas gravações

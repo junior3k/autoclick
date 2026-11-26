@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Dependências
-        run: pip install mss numpy opencv-python-headless pyright fastapi uvicorn
+        run: pip install mss numpy opencv-python-headless pyright
       - name: Linux - Xvfb (tela virtual para a janela)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb python3-tk
@@ -23,7 +23,7 @@ jobs:
       - name: Núcleo
         shell: bash
         run: |
-          for f in rodar_testes testes_gravacao testes_escala testes_novos testes_auto testes_operacao testes_robustez testes_manutencao testes_edicao testes_som testes_ed25519 testes_cliente_servidor testes_servidor_nucleo testes_servidor_e2e testes_jogos testes_novidades testes_rotina; do
+          for f in rodar_testes testes_gravacao testes_escala testes_novos testes_auto testes_operacao testes_robustez testes_manutencao testes_edicao testes_som testes_ed25519 testes_atualizacao testes_release testes_jogos testes_novidades testes_rotina; do
             echo "== $f"; python tests/$f.py || exit 1
           done
       - name: Janela (Linux, com Xvfb)

@@ -1,11 +1,10 @@
-"""GUI + servidor real: importar convite, verificar, atualizar, enviar relatório."""
+"""GUI + site estático falso (manifesto assinado + pacote): verificar, atualizar, salvar relatório."""
 import sys, os, time, json, shutil, tempfile, socket, threading
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, RAIZ)
 ROOT = os.path.dirname(os.path.abspath(__file__))
 tmp = tempfile.mkdtemp()
 shutil.copytree(f"{ROOT}/proj", f"{tmp}/p")
-os.environ["AUTOCLICK_SERVIDOR_DADOS"] = f"{tmp}/dados"
 os.environ["AUTOCLICK_SEM_OCR"] = "1"
 os.environ["PYTHONPATH"] = os.pathsep.join([RAIZ] + [x for x in sys.path if x])
 fonte = f"{tmp}/fonte"; os.makedirs(fonte)
@@ -22,25 +21,41 @@ def check(n, c, extra=""):
     if not c: sys.exit(1)
     ok += 1
 
-from servidor import operacao, publicar as pub
-from servidor.nucleo import Nucleo
-from servidor.web import criar_app
-import uvicorn
-s = socket.socket(); s.bind(("127.0.0.1", 0)); porta = s.getsockname()[1]; s.close()
-cfg, token = operacao.instalar(f"http://127.0.0.1:{porta}", porta, f"{tmp}/dados", raiz=fonte)
-n = Nucleo(f"{tmp}/dados")
-pub.publicar(n, "9.9.0", testes=False, canal="estavel", notas="novidades de teste", raiz=fonte, log=lambda m: None)
-uv = uvicorn.Server(uvicorn.Config(criar_app(n), host="127.0.0.1", port=porta, log_level="error"))
-threading.Thread(target=uv.run, daemon=True).start()
-for _ in range(100):
-    try: socket.create_connection(("127.0.0.1", porta), 0.2).close(); break
-    except OSError: time.sleep(0.1)
-import zipfile as _zf
-os.environ["AUTOCLICK_SERVIDOR_URL"] = n.cfg.base
+import hashlib, http.server, zipfile as _zf
+from autoclick import ed25519 as ED, atualizacao
+SEM = ED.gerar_semente(); PUB = ED.chave_publica(SEM).hex()
+# pacote "fonte" da versão 9.9.0 (o código atual com a versão trocada)
+pac_zip = f"{tmp}/pacote.zip"
+with _zf.ZipFile(pac_zip, "w", _zf.ZIP_DEFLATED) as z:
+    for dp, _, fs in os.walk(f"{fonte}/autoclick"):
+        for f in fs:
+            full = os.path.join(dp, f); rel = os.path.relpath(full, fonte).replace(os.sep, "/")
+            dados = open(full, "rb").read()
+            if rel == "autoclick/__init__.py":
+                import re as _re; dados = _re.sub(rb'__version__\s*=\s*"[^"]+"', b'__version__ = "9.9.0"', dados)
+            z.writestr(rel, dados)
+    z.write(f"{fonte}/pyproject.toml", "pyproject.toml")
+PACOTE = open(pac_zip, "rb").read(); SHA = hashlib.sha256(PACOTE).hexdigest()
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.path == "/manifesto.json":
+            sig = ED.assinar(SEM, atualizacao.mensagem_do_pacote("9.9.0", "fonte", SHA, len(PACOTE))).hex()
+            corpo = json.dumps({"mensagem": "", "atualizacoes": {"fonte": {
+                "versao": "9.9.0", "artefato": "fonte", "canal": "estavel", "sha256": SHA, "tamanho": len(PACOTE),
+                "minima": "0", "assinatura": sig, "notas": "novidades de teste",
+                "url": f"http://127.0.0.1:{porta}/arquivos/p.zip"}}}).encode()
+        elif self.path.startswith("/arquivos/"):
+            corpo = PACOTE
+        else:
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200); self.send_header("Content-Length", str(len(corpo))); self.end_headers(); self.wfile.write(corpo)
+httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); porta = httpd.server_port
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+os.environ["AUTOCLICK_SERVIDOR_URL"] = f"http://127.0.0.1:{porta}"
 
 import tkinter.messagebox as MB, tkinter.filedialog as FD
-from autoclick import atualizacao
-atualizacao.chave_publica_embutida = lambda: n.chave_publica_hex()
+atualizacao.chave_publica_embutida = lambda: PUB
 from autoclick.interface.app import App
 from autoclick.interface.dados import Geral
 app = App(Geral(tema="escuro", atualizar_ao_abrir=False), os.getcwd()); r = app.raiz
@@ -57,8 +72,8 @@ infos = []; MB.showinfo = lambda *a, **k: infos.append(a)
 MB.showerror = lambda *a, **k: infos.append(a)
 MB.askyesno = lambda *a, **k: True
 
-print("1) Sem convite: o cartão já mostra o servidor")
-check("mostra o servidor e o canal", "127.0.0.1" in ctl.lbl_srv.cget("text") and "estavel" in ctl.lbl_srv.cget("text"))
+print("1) Sem convite: o cartão já mostra de onde vêm as atualizações")
+check("mostra o endereço, sem canal beta", "127.0.0.1" in ctl.lbl_srv.cget("text") and "beta" not in ctl.lbl_srv.cget("text") and not hasattr(app.g, "canal_beta"))
 check("não existem botões de convite", not hasattr(ctl, "importar") and not hasattr(ctl, "colar"))
 
 print("2) Verificar e atualizar")
@@ -72,8 +87,7 @@ check("pacote baixado foi limpo", not os.path.isdir(atualizacao.pasta_baixados(o
 nv = json.load(open("_atualizacao/novidades.json", encoding="utf-8"))
 check("novidades guardadas para o próximo início", nv["versao"] == "9.9.0" and "novidades de teste" in nv["notas"], str(nv))
 check("backup feito", len(atualizacao.listar_backups(os.getcwd())) >= 1)
-check("id de instalação criado ao lado do programa", os.path.isfile("autoclick_instalacao.txt") and n.resumo()["instalacoes"] == 1)
-app.g.canal_beta = True; ctl.pintar(); check("canal beta opcional aparece", "beta" in ctl.lbl_srv.cget("text")); app.g.canal_beta = False; ctl.pintar()
+check("nenhum número de instalação é criado", not os.path.isfile("autoclick_instalacao.txt"))
 
 print("2b) Pronta: oferece só quando ocioso e instala ao fechar")
 perguntas = []; MB.askyesno = lambda *a, **k: (perguntas.append(a), False)[1]
@@ -95,16 +109,19 @@ app.g.atualizar_ao_fechar = True; ctl.ao_fechar()
 check("ligada: instala ao fechar (com backup)", ctl.pronto is None and len(atualizacao.listar_backups(os.getcwd())) > antes)
 MB.askyesno = lambda *a, **k: True
 
-print("3) Relatório")
+print("3) Relatório (salvo em arquivo, nada é enviado)")
 os.makedirs("logs", exist_ok=True); open("logs/autoclick.log", "w").write("linha de log\n")
-ctl.enviar_relatorio()
-check("relatório enviado", bombear(lambda: "Relatório enviado" in ctl.lbl.cget("text")), ctl.lbl.cget("text"))
-lista = n.listar_relatorios(); check("servidor recebeu", len(lista) == 1 and lista[0]["instalacao"] == open("autoclick_instalacao.txt").read()[:8])
-import zipfile; z = zipfile.ZipFile(n.caminho_relatorio(lista[0]["id"]))
+destino = f"{tmp}/meu_relatorio.zip"; FD.asksaveasfilename = lambda *a, **k: destino
+ctl.salvar_relatorio()
+check("relatório salvo", os.path.isfile(destino) and "salvo" in ctl.lbl.cget("text"), ctl.lbl.cget("text"))
+import zipfile; z = zipfile.ZipFile(destino)
 check("relatório com log e sem segredos", "autoclick.log" in z.namelist() and "webhook" not in z.read("config.json").decode())
+FD.asksaveasfilename = lambda *a, **k: ""; os.remove(destino); ctl.salvar_relatorio()
+check("cancelar não cria arquivo", not os.path.exists(destino))
+check("não há mais botão de enviar", not hasattr(ctl, "enviar_relatorio"))
 
 print("4) Servidor fora do ar")
-uv.should_exit = True; time.sleep(1.0)
+httpd.shutdown(); httpd.server_close(); time.sleep(0.5)
 ctl.verificar()
 check("erro claro", bombear(lambda: "✖" in ctl.lbl.cget("text")), ctl.lbl.cget("text"))
 
@@ -122,4 +139,4 @@ check("checkbox da Configurações acompanha", all(bool(v.get()) for v in app._v
 app.alternar_som(); check("desligou durante a execução", enviados == ["som:1", "som:0"] and not app.g.som_volta)
 app.exec = real
 app.fechar(forcar=True)
-print(f"\n{ok} verificações passaram (GUI + servidor).")
+print(f"\n{ok} verificações passaram (GUI + site estático).")

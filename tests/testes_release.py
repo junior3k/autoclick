@@ -1,4 +1,8 @@
 """Ferramentas de release: tag x versão, pacotes, manifesto assinado, site, e o cliente lendo o resultado."""
+import sys as _s0
+for _f in (_s0.stdout, _s0.stderr):
+    try: _f.reconfigure(encoding="utf-8", errors="replace")  # Windows (cp1252) não imprime setas
+    except Exception: pass
 import http.server, json, os, shutil, sys, tempfile, threading, zipfile
 from pathlib import Path
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Generator, Optional, cast
 
-from .. import windows as m_windows
+from .. import atalhos as m_windows
 
 ARQ_GUI = "autoclick_gui.json"
 

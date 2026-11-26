@@ -1,4 +1,8 @@
 """Cliente de atualização contra um site estático FALSO (http.server): manifesto, assinatura, download."""
+import sys as _s0
+for _f in (_s0.stdout, _s0.stderr):
+    try: _f.reconfigure(encoding="utf-8", errors="replace")  # Windows (cp1252) não imprime setas
+    except Exception: pass
 import hashlib, http.server, io, json, os, sys, tempfile, threading, zipfile
 from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

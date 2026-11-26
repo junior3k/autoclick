@@ -17,7 +17,7 @@ from .dados import (aviso_atalho, estado_global, URL_TESSERACT, aplicar_perfil, 
                     dependencias, ler_perfil, listar_janelas, listar_perfis, teclas_validas)
 from .dialogos import pedir_texto
 from .pag_servidor import montar_cartao
-from .. import windows as m_windows
+from .. import atalhos as m_windows
 from .pagina import Pagina
 from .widgets import (Cartao, Rolavel, botao, entrada, escolha, linha_inline, marcar, numero, opcao, responsivo,
                       rotulo)
@@ -285,7 +285,7 @@ class PaginaConfig(Pagina):
         k = self._captura
         if k is None:
             return
-        if m_windows.tecla_pressionada_global(0x1B):  # Esc
+        if estado_global(0x1B):  # Esc
             self._cancelar_captura()
             return
         nome = self.ler_tecla(self._captura_antes)

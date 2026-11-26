@@ -1,3 +1,7 @@
+import sys as _s0
+for _f in (_s0.stdout, _s0.stderr):
+    try: _f.reconfigure(encoding="utf-8", errors="replace")  # Windows (cp1252) não imprime setas
+    except Exception: pass
 import sys, os, time, json, shutil, tempfile, zipfile, struct, zlib, threading, http.server, queue
 import os as _os; sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 ROOT = os.path.dirname(os.path.abspath(__file__))

@@ -1,4 +1,8 @@
 """Jogos do Roblox: camadas geral + jogo, migração, detecção por logs, estatísticas, bandeja, sons."""
+import sys as _s0
+for _f in (_s0.stdout, _s0.stderr):
+    try: _f.reconfigure(encoding="utf-8", errors="replace")  # Windows (cp1252) não imprime setas
+    except Exception: pass
 import os, sys, json, tempfile, shutil, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ok = 0

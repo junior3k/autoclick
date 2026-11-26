@@ -8,6 +8,9 @@
 - Novo ícone do aplicativo (janela, barra de tarefas e executável).
 - Acentos corretos no terminal do Windows.
 
+## 0.13.1
+- Correção: a janela voltou a não carregar numpy/OpenCV (a leitura de atalhos foi movida para um módulo leve, `autoclick/atalhos.py`); o teste automático da janela falhava no Linux.
+
 ## 0.13.0
 - Download e atualizações agora ficam 100% no GitHub, sem servidor ligado no PC: a página de download é servida pelo GitHub Pages e os arquivos vêm das Releases do repositório (24 horas por dia).
 - Publicar uma versão é criar uma tag (`git tag v0.13.0 && git push --tags`): o GitHub testa, constrói o .exe, assina, cria a Release e atualiza o site sozinho. A assinatura Ed25519 das atualizações continua sendo conferida pelo programa.

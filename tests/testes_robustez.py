@@ -1,3 +1,7 @@
+import sys as _s0
+for _f in (_s0.stdout, _s0.stderr):
+    try: _f.reconfigure(encoding="utf-8", errors="replace")  # Windows (cp1252) não imprime setas
+    except Exception: pass
 import sys, types, json, tempfile, os, threading, time, http.server
 import numpy as np
 from pathlib import Path

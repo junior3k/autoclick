@@ -1,4 +1,8 @@
 """GUI: cronômetro e linha do tempo ao vivo na página Gravar (só conferência)."""
+import sys as _s0
+for _f in (_s0.stdout, _s0.stderr):
+    try: _f.reconfigure(encoding="utf-8", errors="replace")  # Windows (cp1252) não imprime setas
+    except Exception: pass
 import sys, os, time, shutil, tempfile
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, RAIZ)

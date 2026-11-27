@@ -90,6 +90,11 @@ def _raiz(hwnd: Any) -> Any:
     u, _ = api()
     return u.GetAncestor(hwnd, 2) or hwnd  # GA_ROOT
 
+def janela_propria(titulo: Optional[str]) -> bool:
+    """True se o título é o da própria janela do Autoclick (nunca é a janela do jogo)."""
+    return bool(titulo) and str(titulo).strip().lower().startswith("autoclick inteligente")
+
+
 def titulo_sob_ponto(x: int, y: int) -> Optional[str]:
     """Título da janela (de nível superior) sob o ponto (x, y); None se não achar."""
     if sys.platform != "win32":
@@ -102,7 +107,7 @@ def titulo_sob_ponto(x: int, y: int) -> Optional[str]:
         if not hwnd:
             return None
         t = _titulo_de(_raiz(hwnd))
-        return t or None
+        return None if (not t or janela_propria(t)) else t
     except Exception:
         return None
 

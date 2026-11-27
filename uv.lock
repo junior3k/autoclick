@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "autoclick"
-version = "0.13.0"
+version = "0.13.7"
 source = { editable = "." }
 dependencies = [
     { name = "mss" },

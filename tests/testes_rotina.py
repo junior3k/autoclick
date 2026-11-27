@@ -111,4 +111,34 @@ check("modo rotina existe", '"rotina"' in cli and "rotina_exec" in cli)
 rep = open(os.path.join(os.path.dirname(__file__), "..", "autoclick", "reproducao.py"), encoding="utf-8").read()
 check("reproduzir devolve o resultado", ") -> str:" in rep and 'return "falhou"' in rep and 'return "ok"' in rep and "som: bool = True" in rep)
 
+print("Janela do próprio Autoclick nunca é a janela do jogo")
+from autoclick import windows as _WJ
+check("título do Autoclick é reconhecido", _WJ.janela_propria("Autoclick Inteligente 0.13.3") and not _WJ.janela_propria("Roblox") and not _WJ.janela_propria(None))
+print("Prévia (simular)")
+_rot = {"itens": [{"tipo": "script", "script": "coleta", "vezes": 3}, {"tipo": "script", "script": "loja", "vezes": 1}],
+        "intervalos": [], "pausa_entre_scripts": 0, "pausa_volta": 0, "voltas": 1}
+_ev = R.simular(_rot, {"coleta": 25, "loja": 33})
+_ord = [x for _, x in _ev if x.startswith("▶")]
+check("simular respeita a ordem da lista (coleta ×3, depois loja)", [o.split()[1] for o in _ord] == ["coleta", "coleta", "coleta", "loja"], str(_ord))
+check("simular soma as durações", [round(t) for t, x in _ev if x.startswith("▶")] == [0, 25, 50, 75])
+_rot2 = dict(_rot, intervalos=[{"script": "loja", "a_cada": 60, "ativo": True}], pausa_entre_scripts=0.5)
+_ev2 = R.simular(_rot2, {"coleta": 25, "loja": 33})
+check("intervalo vencido entra no próximo ponto livre (entre itens)", any("intervalo" in x for _, x in _ev2), str(_ev2))
+print("Fluxo da plantação: coleta, espera 300 s (×3) e loja DURANTE a 3ª espera")
+E = lambda s, **k: {"tipo": "esperar", "segundos": s, **k}
+fluxo = rot(itens=[S("coleta"), E(300), S("coleta"), E(300), S("coleta"), E(300, durante=["loja"])], voltas=2)
+m = Mundo(); m.dur = 25
+check("fluxo termina bem", m.rotina(fluxo).executar() == "ok")
+ordem = [(t, n) for t, n in m.ordem]
+check("ordem: coleta, coleta, coleta, loja, e recomeça", [n for _, n in ordem] == ["coleta", "coleta", "coleta", "loja"] * 2, str(ordem))
+check("cada espera de 300 s conta do FIM do script (coletas a cada 325 s)", [t for t, n in ordem[:3]] == [0, 325, 650], str(ordem))
+check("a loja roda logo depois da 3ª coleta", ordem[3] == (675, "loja"), str(ordem))
+check("a 3ª espera completa os 300 s mesmo com a loja dentro (próximo ciclo em 650+25+300=975)", ordem[4] == (975, "coleta"), str(ordem))
+m = Mundo(); m.dur = 400
+m.rotina(rot(itens=[S("coleta"), E(300, durante=["loja"]), S("coleta")])).executar()
+check("loja mais longa que a espera: termina por inteiro e a próxima coleta vem logo depois", [n for _, n in m.ordem] == ["coleta", "loja", "coleta"] and m.ordem[2][0] >= m.ordem[1][0] + 400, str(m.ordem))
+check("validar acusa script inexistente na espera", any("loja" in x for x in R.validar(rot(itens=[E(10, durante=["loja"])]), {"coleta"})))
+check("descrever mostra o que roda na espera", "enquanto espera: loja" in R.descrever(E(300, durante=["loja"])))
+_ev = R.simular(fluxo, {"coleta": 25, "loja": 33}, 3600)
+check("a prévia mostra a loja durante a espera", any("durante a espera" in x for _, x in _ev), str(_ev[:8]))
 print(f"\n{ok} verificações passaram (rotinas).")

@@ -61,7 +61,7 @@ class FakeBandeja:
     def iniciar(self): return True
     def fechar(self): pass
 app.bandeja = FakeBandeja()
-check("menu com 9 itens", len(app._nav) == 9)
+check("menu com 7 itens", len(app._nav) == 7)
 for k in ("historico", "ajuda", "config", "gravar"):
     app.ir(k); r.update()
 check("cabeçalho da Ajuda", True)
@@ -264,7 +264,7 @@ check("usar tamanho atual limpa o aviso", gp.lbl_amb.cget("text") == "" and json
 
 print("10) Layout no tamanho mínimo")
 r.geometry("900x640"); app.ir("config"); r.update(); bombear(0.4)
-for k in ("gravar", "regras", "auto", "ferramentas", "historico", "config", "ajuda"):
+for k in ("gravar", "rotinas", "regras", "auto", "historico", "config", "ajuda"):
     app.ir(k); bombear(0.15)
     pb = [(n, b.winfo_width()) for n, b in (("chip", app.chip), ("pausa", app.btn_pausa), ("parar", app.btn_parar))]
     check(f"{k}: 3 controles iguais e visíveis", max(w for _, w in pb) - min(w for _, w in pb) <= 1 and app._dir.winfo_rootx() + app._dir.winfo_width() <= r.winfo_rootx() + r.winfo_width(), str(pb))

@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from pathlib import Path
 from typing import Any
 
+from . import acoes
 from .dados import agregar_historico, formatar_duracao, ler_historico
 from .pagina import Pagina
 from .widgets import Cartao, GraficoBarras, botao
@@ -16,7 +17,7 @@ from .widgets import Cartao, GraficoBarras, botao
 class PaginaHistorico(Pagina):
     chave = "historico"
     titulo = "Histórico"
-    subtitulo = "O que o programa fez em cada execução (fica salvo em historico/sessoes.jsonl)."
+    subtitulo = ""
 
     def construir(self) -> None:
         c, t = self.t.c, self.t
@@ -55,6 +56,7 @@ class PaginaHistorico(Pagina):
         rod = tk.Frame(self.frame, bg=c["bg"])
         rod.pack(fill="x", pady=(8, 0))
         botao(rod, "Atualizar", self.recarregar, "Ghost", True).pack(side="left")
+        botao(rod, "Resumir CSV…", lambda: acoes.resumo_csv(self.app), "Ghost", True).pack(side="left", padx=6)
         botao(rod, "Abrir pasta de capturas de erro", self.abrir_erros, "Ghost", True).pack(side="left", padx=6)
         botao(rod, "Apagar histórico", self.apagar, "Danger", True).pack(side="right")
 

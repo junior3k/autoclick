@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from typing import Any
 
 from . import comandos
-from .dados import (ARQ_PREVIA, atualizar_referencia, comparar_ambiente, listar_pngs, referencia_gravacao,
+from .dados import (ARQ_PREVIA, atualizar_referencia, comparar_ambiente, copia_de_seguranca, eventos_da_gravacao, listar_pngs, referencia_gravacao,
                     resumo_gravacao, tamanho_da_janela, tamanho_da_tela)
 from .pagina import Pagina
 from .widgets import (Cartao, PainelStatus, Rolavel, botao, entrada, escolha, linha_inline, marcar, numero, responsivo,
@@ -17,7 +17,7 @@ from .widgets import (Cartao, PainelStatus, Rolavel, botao, entrada, escolha, li
 class PaginaGravacao(Pagina):
     chave = "gravar"
     titulo = "Gravar & Reproduzir"
-    subtitulo = "Jogue uma vez enquanto grava; depois deixe o programa repetir sozinho."
+    subtitulo = ""
 
     def construir(self) -> None:
         a, c = self.app, self.t.c
@@ -26,8 +26,7 @@ class PaginaGravacao(Pagina):
         f = rol.corpo
 
         # ---------------- 1 · gravar ----------------
-        g = Cartao(f, self.t, "Gravar", "Os seus cliques, arrastos e teclas são gravados com o "
-                   f"tempo certo. Aperte {self.g.tecla_parar} para terminar.", "1")
+        g = Cartao(f, self.t, "Gravar", f"{self.g.tecla_parar} termina a gravação.", "1")
         self.v_arq = a.var("gravacao")
         linha = linha_inline(g.corpo, self.t)
         linha.columnconfigure(0, weight=1)
@@ -36,10 +35,9 @@ class PaginaGravacao(Pagina):
         g.campo("Arquivo da gravação", linha)
         self.cb_ancora = escolha(g.corpo, a.var("ancora"), [""] + listar_pngs(self.g.pasta),
                                  editavel=True)
-        g.campo("Âncora do mapa", self.cb_ancora,
-                "Opcional: imagem de referência para soltar torres mesmo se a câmera andar.")
-        g.campo("Contagem inicial", numero(g.corpo, a.var("atraso"), 0, 30), "segundos para você ir ao jogo")
-        g.campo("Duração máxima", numero(g.corpo, a.var("duracao"), 0, 7200, 10), "0 = até apertar F9")
+        g.campo("Âncora do mapa", self.cb_ancora)
+        g.campo("Contagem inicial (s)", numero(g.corpo, a.var("atraso"), 0, 30))
+        g.campo("Duração máxima (s)", numero(g.corpo, a.var("duracao"), 0, 7200, 10), "0 = até apertar F9")
         g.linha_cheia(marcar(g.corpo, "Gravar também as teclas", a.var("teclado")), (8, 0))
         g.linha_cheia(marcar(g.corpo, "Criar/atualizar regras no botoes.json ao terminar",
                              a.var("gerar_regras")))
@@ -50,13 +48,9 @@ class PaginaGravacao(Pagina):
         self.btn_editar = botao(bg, "Editar gravação…", self.editar, "Ghost", True)
         self.btn_editar.pack(side="left", padx=8)
         g.linha_cheia(bg, (16, 0))
-        g.linha_cheia(tk.Label(g.corpo, text=f"Dica: {self.g.tecla_gravar} inicia/para a gravação e {self.g.tecla_reproduzir} "
-                               "inicia/para a reprodução, de qualquer lugar.", bg=self.t.c["card"], fg=self.t.c["muted"],
-                               font=self.t.f_pequena, anchor="w", justify="left", wraplength=320), (6, 0))
 
         # ---------------- 2 · reproduzir ----------------
-        r = Cartao(f, self.t, "Reproduzir", "Refaz a gravação. Só age com a janela do jogo ativa; "
-                   "botões marcados com auto_detect são clicados assim que aparecem.", "2")
+        r = Cartao(f, self.t, "Reproduzir", "", "2")
         self.v_vel = a.var("velocidade")
         vel = linha_inline(r.corpo, self.t)
         vel.columnconfigure(0, weight=1)
@@ -103,14 +97,12 @@ class PaginaGravacao(Pagina):
                                 justify="left", wraplength=560)
         self.lbl_amb.pack(side="left")
         self.btn_amb = botao(amb, "Usar tamanho atual", self.usar_tamanho_atual, "Ghost", True)
-        pv = Cartao(rod, self.t, "Visão ao vivo", "Mostra o que o programa enxerga enquanto reproduz.")
+        pv = Cartao(rod, self.t, "Visão ao vivo", "")
         self.previa = PreviaViva(pv.corpo, self.t, ARQ_PREVIA)
         self.previa.grid(row=0, column=0, columnspan=2, sticky="ew")
         pv.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         a.registrar_previa(self.previa)
-        cr = Cartao(rod, self.t, "Cronômetro da gravação",
-                    "Só para conferir: começa quando a gravação de fato começa (depois da contagem) "
-                    "e lista as teclas e cliques com o tempo de cada um. Nada disso muda o arquivo.")
+        cr = Cartao(rod, self.t, "Cronômetro da gravação", "")
         self.lbl_cron = tk.Label(cr.corpo, text="00:00.0", bg=c["bg"], fg=c["text"],
                                  font=("Consolas", 26, "bold"), anchor="w")
         self.lbl_cron.grid(row=0, column=0, sticky="w")
@@ -178,7 +170,19 @@ class PaginaGravacao(Pagina):
         self.atualizar_info()
 
     # ------------------------------------------------------------------ #
-    def gravar(self) -> None:
+    def gravar(self, perguntar: bool = True) -> None:
+        """`perguntar=False` (atalho de teclado, com o jogo na frente): não abre janela, só guarda a cópia."""
+        n = eventos_da_gravacao(self.g.gravacao)
+        if n and not perguntar:
+            copia_de_seguranca(self.g.gravacao)
+        elif n:  # já tem gravação neste arquivo: confirma e guarda uma cópia antes de regravar por cima
+            nome = self.g.gravacao.replace("\\", "/").rsplit("/", 1)[-1]
+            if not messagebox.askyesno("Substituir gravação?", f"“{nome}” já tem {n} eventos.\n\n"
+                                       "Gravar de novo substitui o conteúdo. Uma cópia fica em "
+                                       f"{nome[:-5] if nome.endswith('.json') else nome}.bak.json.",
+                                       parent=self.app.raiz):
+                return
+            copia_de_seguranca(self.g.gravacao)
         if not self.g.janela.strip():
             self.app.log_texto("⚠ Dica: defina a janela do jogo em Configurações para a gravação "
                                "acompanhar a janela quando ela mexer.\n", "aviso")

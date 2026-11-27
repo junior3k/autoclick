@@ -16,8 +16,7 @@ from .widgets import Cartao, Rolavel, botao, entrada, marcar
 class PaginaJogos(Pagina):
     chave = "jogos"
     titulo = "Jogos"
-    subtitulo = ("O Roblox é uma plataforma: cada jogo tem seus botões e regras. O “Roblox (geral)” vale para "
-                 "todos (desconectado, reconectar…) e cada jogo soma os seus por cima.")
+    subtitulo = ""
 
     def construir(self) -> None:
         a, c, t = self.app, self.t.c, self.t

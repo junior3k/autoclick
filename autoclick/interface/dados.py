@@ -26,7 +26,7 @@ class Geral:
     monitor: int = 1
     confianca: float = 0.85
     tema: str = "escuro"
-    minimizar: bool = True
+    minimizar: bool = False  # esconder esta janela ao gravar/reproduzir (desligado por padrão)
     # gravar
     atraso: int = 3
     ancora: str = ""
@@ -78,6 +78,7 @@ class Geral:
     detectar_jogo: bool = True
     jogos_migrado: bool = False
     avisou_novidades: str = ""  # última versão cujas novidades já foram mostradas
+    layout_versao: int = 0  # migrações únicas das configurações salvas (ver carregar_geral)
     # segurança / robustez
     tela_parada: float = 0.0  # segundos sem a tela mudar (0 = desligado)
     captura_erro: bool = True
@@ -97,6 +98,7 @@ class Geral:
 def carregar_geral(caminho: str = ARQ_GUI) -> Geral:
     g = Geral()
     p = Path(caminho)
+    g.layout_versao = 1  # instalação nova: já nasce no layout atual (sem migrar nada)
     if not p.is_file():
         return g
     try:
@@ -105,6 +107,7 @@ def carregar_geral(caminho: str = ARQ_GUI) -> Geral:
         return g
     if not isinstance(bruto, dict):
         return g
+    g.layout_versao = 0  # arquivo existente: vale o que ele disser (sem o campo = layout antigo)
     dados = cast(dict[str, Any], bruto)
     for f in fields(Geral):
         if f.name in dados:
@@ -121,6 +124,9 @@ def carregar_geral(caminho: str = ARQ_GUI) -> Geral:
                     setattr(g, f.name, str(novo))
             except (TypeError, ValueError):
                 pass
+    if g.layout_versao < 1:  # 0.14.0: "minimizar" passou a vir desligado; zera o valor antigo uma única vez
+        g.minimizar = False
+        g.layout_versao = 1
     return g
 
 
@@ -178,6 +184,38 @@ def lista_fluxo(dados: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(f, list):
         return []
     return [cast(dict[str, Any], e) for e in cast(list[Any], f) if isinstance(e, dict)]
+
+
+def duracao_gravacao(arquivo: str) -> float:
+    """Segundos que a gravação leva (último evento + espera final); 0 se ilegível."""
+    try:
+        d: Any = json.loads(Path(arquivo).read_text(encoding="utf-8"))
+        ev = cast(list[dict[str, Any]], d.get("eventos", []))
+        return max((float(e.get("t", 0)) for e in ev), default=0.0) + max(0.0, float(d.get("cauda", 0) or 0))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return 0.0
+
+
+def eventos_da_gravacao(arquivo: str) -> int:
+    """Quantos eventos há no arquivo de gravação (0 se não existe, está vazio ou ilegível)."""
+    try:
+        d: Any = json.loads(Path(arquivo).read_text(encoding="utf-8"))
+        return len(cast(list[Any], d.get("eventos", [])))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return 0
+
+
+def copia_de_seguranca(arquivo: str) -> Optional[str]:
+    """Copia a gravação para NOME.bak.json (substitui a cópia anterior). Devolve o caminho, ou None se falhar."""
+    p = Path(arquivo)
+    if not p.is_file():
+        return None
+    destino = p.with_name(p.stem + ".bak.json")
+    try:
+        destino.write_bytes(p.read_bytes())
+    except OSError:
+        return None
+    return str(destino)
 
 
 def resumo_gravacao(arquivo: str) -> str:

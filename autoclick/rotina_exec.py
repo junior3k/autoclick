@@ -20,7 +20,8 @@ def _titulo_do_script(caminho: str) -> Optional[str]:
     try:
         d: Any = json.loads(Path(caminho).read_text(encoding="utf-8"))
         t = (d.get("janela") or {}).get("titulo")
-        return str(t) if t else None
+        # gravações antigas podem ter guardado a janela do próprio Autoclick: isso nunca é o jogo
+        return str(t) if t and not m_windows.janela_propria(str(t)) else None
     except (OSError, ValueError, AttributeError):
         return None
 
@@ -37,7 +38,21 @@ def executar_arquivo(arquivo: str, velocidade: float, atraso: float, janela: Opt
     if problemas:
         sys.exit("A rotina não pode rodar:\n  - " + "\n  - ".join(problemas))
     usados = [str(i.get("script")) for i in rot["itens"] if i.get("tipo") == "script"]
-    titulo = janela or next((t for t in (_titulo_do_script(scripts[n]) for n in usados if n in scripts) if t), None)
+    usados += [str(iv.get("script")) for iv in rot["intervalos"] if iv.get("script")]
+    por_script = {n: _titulo_do_script(scripts[n]) for n in dict.fromkeys(usados) if n in scripts}
+    do_rot = str(rot.get("janela") or "").strip() or None
+    qualquer = next((t for t in por_script.values() if t), None)
+    padrao_t = janela or do_rot or qualquer      # usado por quem não tem janela própria
+
+    def titulo_de(nome: str) -> Optional[str]:
+        return janela or por_script.get(nome) or padrao_t
+
+    titulo = padrao_t
+    if checar_janela and not titulo:
+        sys.exit("Não sei qual é a janela do jogo: nenhum script da rotina guardou a janela e o campo "
+                 "'Janela do jogo' das Configurações está vazio.\n"
+                 "  Defina a janela em Configurações (ou regrave os scripts com ela definida); sem isso a "
+                 "rotina clicaria em qualquer janela que estiver na frente.")
     print(f"▶ Rotina: {len(rot['itens'])} item(ns), {len(rot['intervalos'])} intervalo(s)"
           + (f", {rot['voltas']} volta(s)." if rot["voltas"] else " em loop (F9 para parar)."))
     for i in range(int(atraso), 0, -1):
@@ -45,6 +60,11 @@ def executar_arquivo(arquivo: str, velocidade: float, atraso: float, janela: Opt
         m_som.tocar_evento("tique")
         time.sleep(1)
     m_som.tocar_evento("repro_inicio")
+    if titulo and checar_janela:   # traz o jogo para a frente antes do primeiro clique
+        print(f"Trazendo a janela '{titulo}' para a frente...")
+        if m_reproducao._garantir_janela(titulo, espera_janela) is None:
+            print("Rotina interrompida: a janela do jogo não ficou ativa.")
+            return "interrompida"
 
     volta_rot = [1]
 
@@ -58,7 +78,7 @@ def executar_arquivo(arquivo: str, velocidade: float, atraso: float, janela: Opt
         try:
             return m_reproducao.reproduzir(
                 m_rotina.caminho_do_script(arquivo, nome), velocidade, 0, loop=None, pausa_loop=0.0,
-                janela=titulo, checar_janela=checar_janela, espera_janela=espera_janela, teclas=teclas,
+                janela=titulo_de(nome), checar_janela=checar_janela, espera_janela=espera_janela, teclas=teclas,
                 config=config, pasta=pasta, confianca=confianca, monitor=monitor, auto_detect=auto_detect,
                 auto_max=auto_max, registro=registro, som=False)
         except SystemExit as e:  # gravação sumiu / sem eventos

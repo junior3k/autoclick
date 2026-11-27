@@ -97,6 +97,9 @@ def validar(rot: dict[str, Any], scripts: Optional[set[str]] = None) -> list[str
         elif t == "esperar":
             if float(it.get("segundos", 0) or 0) <= 0:
                 p.append(f"Item {n}: o tempo de espera precisa ser maior que zero.")
+            for d in cast(list[Any], it.get("durante") or []):
+                if scripts is not None and str(d) not in scripts:
+                    p.append(f"Item {n}: o script “{d}”, que roda durante a espera, não existe.")
         elif t == "esperar_botao":
             if not str(it.get("botao", "")):
                 p.append(f"Item {n}: falta o nome do botão a esperar.")
@@ -116,7 +119,8 @@ def descrever(it: dict[str, Any]) -> str:
         ant = f" (antes espera [{it['antes_botao']}])" if it.get("antes_botao") else ""
         return f"script {it.get('script', '?')} ×{int(it.get('vezes', 1) or 1)}{ant}"
     if t == "esperar":
-        return f"esperar {float(it.get('segundos', 0)):g} s"
+        dur = [str(x) for x in cast(list[Any], it.get("durante") or [])]
+        return f"esperar {float(it.get('segundos', 0)):g} s" + (f" · enquanto espera: {', '.join(dur)}" if dur else "")
     if t == "esperar_botao":
         v = "sumir" if str(it.get("ate", "aparecer")) == "sumir" else "aparecer"
         return (f"esperar [{it.get('botao', '?')}] {v} (até {float(it.get('timeout', 60)):g} s; "
@@ -249,6 +253,11 @@ class Rotina:
                 elif t == "esperar":
                     fim = self.agora() + float(it.get("segundos", 0))
                     self.log(f"  esperando {float(it.get('segundos', 0)):g} s")
+                    for nome in cast(list[Any], it.get("durante") or []):
+                        # aproveita a espera: roda o script (por inteiro) e depois completa o tempo que faltar
+                        self.log(f"  durante a espera: {nome}")
+                        if not self._rodar_script(str(nome)):
+                            return self.resultado
                     while self.agora() < fim:  # durante a espera os intervalos vencidos podem entrar
                         if self.abortou():
                             self.resultado = "interrompida"
@@ -268,3 +277,72 @@ class Rotina:
                     return self.resultado
         self.resultado = "ok"
         return self.resultado
+
+
+def simular(rot: dict[str, Any], duracoes: dict[str, float], limite: float = 1800.0,
+            max_linhas: int = 60) -> list[tuple[float, str]]:
+    """Mostra, sem rodar nada, o que a rotina faria (mesma lógica de `Executor`): lista (segundo, texto).
+
+    `duracoes` = quanto dura cada script (segundos). Esperas por botão contam 0 s (só dá para saber rodando).
+    Para no `limite` de segundos, em `max_linhas` linhas ou ao terminar as voltas.
+    """
+    itens = cast(list[dict[str, Any]], rot.get("itens", []))
+    ivs = cast(list[dict[str, Any]], rot.get("intervalos", []))
+    entre = float(rot.get("pausa_entre_scripts", 0.5) or 0)
+    entre_voltas = float(rot.get("pausa_volta", 1.0) or 0)
+    voltas = int(rot.get("voltas", 0) or 0)
+    ev: list[tuple[float, str]] = []
+    st = {"t": 0.0}
+    ultimo = {i: 0.0 for i in range(len(ivs))}
+
+    def cheio() -> bool:
+        return st["t"] > limite or len(ev) >= max_linhas
+
+    def rodar(nome: str, vezes: int, rotulo: str = "") -> None:
+        for v in range(max(1, vezes)):
+            if cheio():
+                return
+            ev.append((st["t"], f"▶ {nome}" + (f" ({v + 1}/{vezes})" if vezes > 1 else "") + rotulo
+                       + f" · dura {duracoes.get(nome, 0.0):.0f} s"))
+            st["t"] += duracoes.get(nome, 0.0) + entre
+
+    def vencidos() -> None:
+        while not cheio():
+            prontos = sorted((ultimo[i] + float(iv.get("a_cada", 0)) - st["t"], i) for i, iv in enumerate(ivs)
+                             if iv.get("ativo", True) and float(iv.get("a_cada", 0) or 0) > 0
+                             and ultimo[i] + float(iv.get("a_cada", 0)) - st["t"] <= 0)
+            if not prontos:
+                return
+            i = prontos[0][1]
+            ultimo[i] = st["t"]
+            rodar(str(ivs[i].get("script", "")), 1, "  ⏱ intervalo")
+
+    volta = 0
+    while (voltas == 0 or volta < voltas) and not cheio():
+        volta += 1
+        ev.append((st["t"], f"— volta {volta} —"))
+        for it in itens:
+            if cheio():
+                break
+            vencidos()
+            tipo = it.get("tipo")
+            if tipo == "script":
+                rodar(str(it.get("script", "")), int(it.get("vezes", 1) or 1))
+            elif tipo == "esperar":
+                seg = float(it.get("segundos", 0) or 0)
+                ev.append((st["t"], f"  esperar {seg:g} s"))
+                fim = st["t"] + seg
+                for nome in cast(list[Any], it.get("durante") or []):
+                    rodar(str(nome), 1, "  (durante a espera)")
+                while st["t"] < fim and not cheio():
+                    vencidos()
+                    prox = min((ultimo[i] + float(iv.get("a_cada", 0)) for i, iv in enumerate(ivs)
+                                if iv.get("ativo", True) and float(iv.get("a_cada", 0) or 0) > 0), default=fim)
+                    st["t"] = min(fim, max(prox, st["t"] + 0.2))
+            elif tipo == "esperar_botao":
+                ev.append((st["t"], f"  espera o botão [{it.get('botao', '?')}] (tempo real depende do jogo)"))
+        if voltas == 0 or volta < voltas:
+            st["t"] += entre_voltas
+    if cheio():
+        ev.append((min(st["t"], limite), "… continua (a prévia mostra só o começo)"))
+    return ev

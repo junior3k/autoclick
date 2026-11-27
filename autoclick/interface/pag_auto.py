@@ -26,7 +26,7 @@ MODOS = (
 class PaginaAutomatico(Pagina):
     chave = "auto"
     titulo = "Automático"
-    subtitulo = "O programa olha a tela e clica sozinho nos botões, seguindo as suas regras."
+    subtitulo = ""
 
     def construir(self) -> None:
         a, c = self.app, self.t.c

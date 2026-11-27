@@ -67,8 +67,8 @@ def bombear(seg=0.0, ate=None, limite=15.0):
         if ate is not None and ate(): return True
         if time.time() - t0 > (limite if ate else seg): return ate is None
         time.sleep(0.02)
-check("9 páginas criadas", set(app.paginas) == {"gravar", "regras", "auto", "jogos", "rotinas", "ferramentas", "historico", "config", "ajuda"})
-check("página inicial = Gravar & Reproduzir", app.g.pagina == "gravar" and app.lbl_titulo.cget("text") == "Gravar & Reproduzir")
+check("7 páginas + Jogos dentro de Configurações", set(app.paginas) == {"gravar", "rotinas", "auto", "regras", "historico", "config", "ajuda"} and set(app.subpaginas) == {"jogos"})
+app.raiz.update(); check("página inicial = Gravar", app.g.pagina == "gravar" and app.paginas["gravar"].frame.winfo_ismapped())
 check("resumo da gravação exibido", "3 eventos" in app.paginas["gravar"].info.cget("text"), app.paginas["gravar"].info.cget("text"))
 pg = app.paginas["gravar"]
 pg.v_rep.set("n"); r.update()
@@ -194,7 +194,7 @@ app.g.janela = "outra"; app.g.intervalo = 9.0
 cf.v_perfil.set("meujogo"); cf.carregar_perfil(); r.update()
 check("perfil carregado de volta", app.g.janela == "Roblox")
 app.trocar_tema("claro"); r.update()
-check("tema claro recria a janela", app.t.nome == "claro" and len(app.paginas) == 9)
+check("tema claro recria a janela", app.t.nome == "claro" and len(app.paginas) == 7)
 salvar_geral(app.g)
 check("configurações persistem", carregar_geral().tema == "claro" and carregar_geral().janela == "Roblox")
 

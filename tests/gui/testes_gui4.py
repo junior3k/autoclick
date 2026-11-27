@@ -35,7 +35,7 @@ print("1) Migração ao abrir")
 bombear()
 check("perfis movidos", not os.path.exists("perfis/roblox.json") and os.path.exists("jogos/geral/perfil.json") and os.path.exists("jogos/outro/perfil.json"))
 check("geral guardou as opções", J.ler("geral").opcoes.get("variacao") == 0.2)
-check("página Jogos existe", "jogos" in app.paginas and "jogos" in app._nav)
+check("página Jogos existe", "jogos" in app.subpaginas and "jogos" not in app._nav)
 check("migração marcada", app.g.jogos_migrado)
 
 print("2) Novo jogo e troca")
@@ -64,7 +64,7 @@ check("persistiu em autoclick_gui.json", carregar_geral().jogos_migrado)
 
 print("3) Página Jogos")
 app.ir("jogos"); bombear()
-pj = app.paginas["jogos"]
+pj = app.subpaginas["jogos"]
 check("lista tem geral, outro e Blox Fruits", set(pj.arv.get_children()) == {"geral", "outro", "blox-fruits"})
 pj.arv.selection_set("blox-fruits"); bombear(0.1)
 check("ids aparecem no campo", pj.v_ids.get() == "2753915549")
@@ -72,7 +72,7 @@ pj.v_ids.set("2753915549, 77"); pj.v_ass.set("logo_bf"); pj.salvar_ids()
 check("salvar ids e assinatura", J.ler("blox-fruits").ids == ["2753915549", "77"] and J.ler("blox-fruits").assinatura == ["logo_bf"])
 pj.arv.selection_set("blox-fruits"); pj.usar(); bombear(0.2)
 check("usar este jogo", app.jogos.atual() == "blox-fruits")
-app.g.intervalo = 9.0; app.paginas["jogos"].salvar_opcoes()
+app.g.intervalo = 9.0; app.subpaginas["jogos"].salvar_opcoes()
 check("salvar minhas opções neste jogo", J.ler("blox-fruits").opcoes["intervalo"] == 9.0)
 
 print("4) Detecção pelos logs")
@@ -114,7 +114,7 @@ with open("historico/sessoes.jsonl", "w", encoding="utf-8") as f:
     for s in ({"jogo": "blox-fruits", "duracao_seg": 3600, "partidas": 20, "total_acoes": 50, "cliques": {"ok": 50}},
               {"duracao_seg": 100, "partidas": 1, "total_acoes": 2}):
         f.write(json.dumps(s) + "\n")
-app.ir("jogos"); pj = app.paginas["jogos"]; bombear(0.1)
+app.ir("jogos"); pj = app.subpaginas["jogos"]; bombear(0.1)
 linhas = [pj.est.item(i, "values") for i in pj.est.get_children()]
 check("tabela por jogo", len(linhas) == 2 and linhas[0][0] == "Blox Fruits" and str(linhas[0][4]) == "20.0", str(linhas))
 

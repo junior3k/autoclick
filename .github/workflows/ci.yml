@@ -38,5 +38,6 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui4.py
           xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui5.py
           xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui6.py
+          xvfb-run -a -s "-screen 0 1280x860x24" python tests/gui/testes_gui7.py
         env:
           AUTOCLICK_SEM_OCR: "1"

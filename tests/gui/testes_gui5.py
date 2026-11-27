@@ -53,13 +53,13 @@ check("itens na ordem e salvos", [i["tipo"] for i in it] == ["script", "script",
 check("coletar ×3", it[1]["vezes"] == 3 and it[2]["segundos"] == 20)
 check("esperar botão: para se não vier", it[3] == {"tipo": "esperar_botao", "botao": "npc_loja", "timeout": 45.0, "ate": "aparecer", "ao_estourar": "parar"}, str(it[3]))
 check("script que espera botão antes", it[4]["antes_botao"] == "npc_loja" and it[4]["antes_timeout"] == 30.0, str(it[4]))
-pg.arv_i.selection_set("4"); pg.mover(-1)
+pg.arv.selection_set("i4"); pg.mover(-1)
 check("mover para cima", [i["tipo"] for i in R.ler("rotina.json")["itens"]][3:] == ["script", "esperar_botao"])
-pg.arv_i.selection_set("2"); resp["texto"] = ["45"]; pg.editar_item()
+pg.arv.selection_set("i2"); resp["texto"] = ["45"]; pg.editar_item()
 check("editar tempo de espera", R.ler("rotina.json")["itens"][2]["segundos"] == 45.0)
-pg.arv_i.selection_set("3"); pg.remover_item(); pg.arv_i.selection_set("3"); pg.remover_item()
+pg.arv.selection_set("i3"); pg.remover_item(); pg.arv.selection_set("i3"); pg.remover_item()
 check("remover itens", len(R.ler("rotina.json")["itens"]) == 3)
-check("tabela mostra a descrição", "script plantar" in pg.arv_i.item("0", "values")[1])
+check("tabela mostra a descrição", "plantar" in pg.arv.item("i0", "values")[1])
 
 print("3) Opções e intervalos")
 pg.v_pausa_s.set("4"); pg.v_voltas.set("2"); pg.v_pausa_v.set("9")
@@ -67,10 +67,10 @@ d = R.ler("rotina.json")
 check("tempo entre scripts customizável (salvo)", d["pausa_entre_scripts"] == 4.0 and d["voltas"] == 2 and d["pausa_volta"] == 9.0)
 resp["item"] = ["loja"]; resp["texto"] = ["300"]; resp["sim"] = [False]; pg.add_intervalo()
 check("intervalo criado", R.ler("rotina.json")["intervalos"] == [{"script": "loja", "a_cada": 300.0, "ativo": True}])
-pg.arv_v.selection_set("0"); pg.alternar_intervalo()
+pg.arv.selection_set("v0"); pg.alternar_intervalo()
 check("liga/desliga intervalo", R.ler("rotina.json")["intervalos"][0]["ativo"] is False)
-pg.alternar_intervalo(); pg.arv_v.selection_set("0"); resp["texto"] = ["120"]; pg.editar_intervalo()
-check("editar intervalo", R.ler("rotina.json")["intervalos"][0]["a_cada"] == 120.0 and "loja a cada 120" in pg.arv_v.item("0", "values")[1])
+pg.alternar_intervalo(); pg.arv.selection_set("v0"); resp["texto"] = ["120"]; pg.editar_intervalo()
+check("editar intervalo", R.ler("rotina.json")["intervalos"][0]["a_cada"] == 120.0 and "a cada 120" in pg.arv.item("v0", "values")[2])
 
 print("4) Validação e execução")
 check("sem problemas: nenhum aviso", pg.lbl_prob.cget("text") == "")
@@ -118,6 +118,91 @@ check("após salvar não fica sujo", "não salvas" not in ed.lbl.cget("text"))
 from autoclick.interface.dados import resumo_gravacao
 check("resumo soma a espera final", "3:00" in resumo_gravacao("antiga.json"), resumo_gravacao("antiga.json"))
 ed.j.destroy()
+
+print("10) Importar gravação e layout")
+app.ir("rotinas"); bombear(); pg = app.paginas["rotinas"]
+import tkinter.filedialog as _FD
+os.makedirs("fora", exist_ok=True)
+json.dump({"janela": {"titulo": "Jogo X"}, "eventos": [{"t": 0, "tipo": "clique", "x": 5, "y": 5}]}, open("fora/minha gravação.json", "w"))
+json.dump({"nada": 1}, open("fora/lixo.json", "w"))
+_FD.askopenfilenames = lambda *a, **k: ("fora/minha gravação.json", "fora/lixo.json")
+PR.filedialog = _FD
+pg.importar_script(); bombear()
+check("importou a gravação válida como script", any(n.startswith("minha_grava") for n in pg.scripts()), str(list(pg.scripts())))
+check("ignorou o .json que não é gravação", not any("lixo" in n for n in pg.scripts()))
+pg.importar_script(); bombear()
+check("importar de novo não sobrescreve (nome novo)", sum(n.startswith("minha_grava") for n in pg.scripts()) == 2)
+def _sobrepostos(w):
+    vistos, ruins = {}, []
+    for f in w.winfo_children():
+        for c in f.winfo_children() if isinstance(f, tk.Frame) else []:
+            pass
+    return ruins
+import tkinter as tk
+def _celulas(corpo):
+    seen = {}
+    for w in corpo.grid_slaves():
+        i = w.grid_info(); seen.setdefault((int(i["row"]), int(i["column"])), []).append(w)
+    return [k for k, v in seen.items() if len(v) > 1]
+def _corpos(w):
+    for f in w.winfo_children():
+        if f.__class__.__name__ == "Cartao": yield f.corpo
+        else: yield from _corpos(f)
+corpos = list(_corpos(pg.frame))
+check("os cartões da página foram achados", len(corpos) >= 3, str(len(corpos)))
+check("nenhum widget em cima de outro dentro dos cartões", all(not _celulas(c) for c in corpos), str([_celulas(c) for c in corpos]))
+
+print("11) Lista única (sequência + intervalos)")
+app.ir("rotinas"); bombear(); pg = app.paginas["rotinas"]
+ant_i = len(pg.rot["itens"]); ant_v = len(pg.rot["intervalos"])
+resp["item"] = ["Na sequência (repete a cada volta)", "coletar"]; resp["texto"] = ["2"]; resp["sim"] = [False]; pg.mais_script()
+check("+ Script 'na sequência' vai para a sequência", len(pg.rot["itens"]) == ant_i + 1 and len(pg.rot["intervalos"]) == ant_v)
+resp["item"] = ["A cada X segundos (entra sozinho)", "loja"]; resp["texto"] = ["900"]; resp["sim"] = [False]; pg.mais_script()
+check("+ Script 'a cada X s' vira intervalo", len(pg.rot["intervalos"]) == ant_v + 1 and pg.rot["intervalos"][-1]["a_cada"] == 900.0)
+vals = pg.arv.item(f"v{len(pg.rot['intervalos']) - 1}", "values")
+check("intervalo aparece na lista única com 'a cada 900 s (15 min)'", "900" in vals[2] and "15 min" in vals[2], str(vals))
+ids = pg.arv.get_children()
+check("grupos: sequência antes dos intervalos", ids.index("gi") < ids.index("i0") < ids.index("gv") < ids.index("v0"), str(ids))
+pg.arv.selection_set("gv"); bombear(0.05)
+check("título de grupo não fica selecionado", "gv" not in pg.arv.selection())
+n_iv = len(pg.rot["intervalos"]); pg.arv.selection_set(f"v{n_iv - 1}"); pg.remover()
+check("Remover age no intervalo selecionado", len(pg.rot["intervalos"]) == n_iv - 1)
+n_it = len(pg.rot["itens"]); pg.arv.selection_set(f"i{n_it - 1}"); pg.remover()
+check("Remover age no item da sequência", len(pg.rot["itens"]) == n_it - 1)
+pg.arv.selection_set("v0"); atv = pg.rot["intervalos"][0].get("ativo", True); pg.duplo_clique()
+check("duplo clique no intervalo liga/desliga", pg.rot["intervalos"][0].get("ativo", True) != atv)
+pg.alternar_intervalo()
+chamadas.clear(); testados = []
+pg.testar_script = lambda: testados.append(pg._sel_script())
+pg.arv.selection_set("i0"); pg.testar_da_lista()
+check("Testar script da lista usa o script da linha", testados == [pg.rot["itens"][0]["script"]], str(testados))
+n_b = len(pg.scripts()); pg._alternar_biblioteca(); bombear(0.05)
+check("biblioteca recolhe", not pg.cartao_lib.winfo_ismapped() and "▸" in pg.btn_lib.cget("text") and f"({n_b})" in pg.btn_lib.cget("text"))
+pg._alternar_biblioteca(); bombear(0.05)
+check("e abre de novo", pg.cartao_lib.winfo_ismapped())
+
+print("12) Prévia e barra fixa")
+app.ir("rotinas"); bombear(); pg = app.paginas["rotinas"]
+prev = pg.txt_previa.get("1.0", "end")
+check("a prévia mostra o que a rotina fará", "volta 1" in prev and "▶" in prev, prev[:200])
+check("a barra de execução não está dentro da área rolável", str(pg.btn_ini.winfo_toplevel()) and pg.rol.corpo not in pg.btn_ini.winfo_toplevel().winfo_children() and not str(pg.btn_ini).startswith(str(pg.rol.corpo)))
+pg.ao_status({"progresso": {"volta": 1, "voltas": 2, "total": 10.0, "decorrido": 3.0}}); bombear(0.05)
+check("a barra de progresso aparece só com progresso", pg.barra.winfo_manager() == "pack")
+pg.ao_status({}); bombear(0.05)
+check("e some quando termina", pg.barra.winfo_manager() == "")
+
+print("13) Esperar com script durante a espera e Duplicar")
+app.ir("rotinas"); bombear(); pg = app.paginas["rotinas"]
+n0 = len(pg.rot["itens"])
+resp["texto"] = ["300"]; resp["sim"] = [True, False]; resp["item"] = ["loja"]; pg.add_espera()
+novo = pg.rot["itens"][-1] if pg.rot["itens"][-1].get("tipo") == "esperar" else [x for x in pg.rot["itens"] if x.get("tipo") == "esperar"][-1]
+check("esperar guarda o script que roda durante a espera", novo.get("durante") == ["loja"] and novo["segundos"] == 300.0, str(novo))
+idx = pg.rot["itens"].index(novo)
+check("a lista mostra 'enquanto espera: loja'", "enquanto espera: loja" in pg.arv.item(f"i{idx}", "values")[3], str(pg.arv.item(f"i{idx}", "values")))
+resp["texto"] = ["300"]; resp["sim"] = [False]; pg.arv.selection_set(f"i{idx}"); pg.editar_item()
+check("editar e responder 'nenhum' limpa o que roda durante a espera", pg.rot["itens"][idx].get("durante") == [])
+pg.arv.selection_set(f"i{idx}"); n1 = len(pg.rot["itens"]); pg.duplicar()
+check("Duplicar cria uma cópia logo abaixo", len(pg.rot["itens"]) == n1 + 1 and pg.rot["itens"][idx + 1] == pg.rot["itens"][idx] and pg.rot["itens"][idx + 1] is not pg.rot["itens"][idx])
 
 print(f"\n{ok} verificações passaram (GUI rotinas).")
 app.raiz.destroy()

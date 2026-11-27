@@ -12,7 +12,7 @@ from .pagina import Pagina
 class PaginaAjuda(Pagina):
     chave = "ajuda"
     titulo = "Ajuda"
-    subtitulo = "Passo a passo e respostas rápidas."
+    subtitulo = ""
 
     def construir(self) -> None:
         c, t = self.t.c, self.t

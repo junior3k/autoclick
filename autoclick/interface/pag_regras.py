@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Any, Optional
 
-from . import comandos
+from . import acoes, comandos
 from .dados import (caminho_png, escrever_config, lista_fluxo, ler_config, listar_pngs, regras_de)
 from .dialogos import pedir_texto
 from .pagina import Pagina
@@ -20,7 +20,7 @@ from .widgets import Cartao, Rolavel, botao, entrada, escolha, linha_inline, num
 class PaginaRegras(Pagina):
     chave = "regras"
     titulo = "Botões & regras"
-    subtitulo = "Diga ao programa o que fazer com cada botão: clicar, arrastar, esperar uma condição…"
+    subtitulo = ""
 
     def construir(self) -> None:
         c = self.t.c
@@ -69,6 +69,8 @@ class PaginaRegras(Pagina):
         outra.pack(fill="x", pady=(6, 0))
         botao(outra, "Atualizar", self.recarregar, "Ghost", True).pack(side="left", expand=True, fill="x")
         botao(outra, "Validar", self.validar, "Ghost", True).pack(side="left", expand=True, fill="x", padx=(6, 0))
+        botao(outra, "Mapa", lambda: acoes.mapa_de_regras(self.app), "Ghost", True).pack(
+            side="left", expand=True, fill="x", padx=(6, 0))
         hist = tk.Frame(barra, bg=c["card"])
         hist.pack(fill="x", pady=(6, 0))
         self.btn_des = botao(hist, "Desfazer", self.desfazer, "Ghost", True)

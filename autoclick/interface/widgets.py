@@ -344,3 +344,168 @@ class GraficoBarras(tk.Canvas):
             self.create_rectangle(x0, y, x1, base, fill=c["accent"], outline="")
             self.create_text((x0 + x1) / 2, y - 8, text=f"{v:g}", fill=c["text"], font=t.f_pequena)
             self.create_text((x0 + x1) / 2, base + 10, text=rot, fill=c["muted"], font=t.f_pequena)
+
+
+def _misturar(a: str, b: str, t: float) -> str:
+    """Mistura duas cores #rrggbb (t=0 → a, t=1 → b)."""
+    try:
+        ra = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+        rb = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+        return "#%02x%02x%02x" % tuple(round(x + (y - x) * t) for x, y in zip(ra, rb))
+    except (ValueError, IndexError):
+        return a
+
+
+class ListaRica(tk.Frame):
+    """Lista de linhas com 'etiquetas' coloridas, linhas de grupo e seleção destacada.
+
+    Faz o papel do ttk.Treeview onde o visual importa: insert/delete/get_children/selection/
+    selection_set/selection_remove/item(iid, "values"), e os eventos "<Double-1>" e
+    "<<TreeviewSelect>>" via bind(). `colunas` = [(id, título, largura, estica, etiqueta?)].
+    Tags de linha: "ok" / "warn" / "neutro" colorem a etiqueta; "off" esmaece; "grupo" = título de grupo.
+    """
+
+    def __init__(self, parent: tk.Misc, t: Tema, colunas: list[tuple[str, str, int, bool, bool]],
+                 vazio: str = "") -> None:
+        super().__init__(parent, bg=t.c["card"], highlightthickness=1, highlightbackground=t.c["border"])
+        self.t = t
+        self.cols = colunas
+        self.vazio = vazio
+        self._linhas: dict[str, dict[str, Any]] = {}
+        self._ordem: list[str] = []
+        self._sel: Optional[str] = None
+        self._cb: dict[str, Any] = {}
+        self.columnconfigure(0, weight=1)
+        self._cab = tk.Frame(self, bg=t.c["bg"])
+        self._cab.grid(row=0, column=0, sticky="ew")
+        self._grade(self._cab)
+        for i, (_id, titulo, _w, _e, _ch) in enumerate(colunas):
+            tk.Label(self._cab, text=titulo, bg=t.c["bg"], fg=t.c["muted"], font=t.f_pequena, anchor="w").grid(
+                row=0, column=i, sticky="ew", padx=(12 if i == 0 else 6, 6), pady=6)
+        self._corpo = tk.Frame(self, bg=t.c["card"])
+        self._corpo.grid(row=1, column=0, sticky="ew")
+        self._corpo.columnconfigure(0, weight=1)
+        self._lbl_vazio = tk.Label(self._corpo, text=vazio, bg=t.c["card"], fg=t.c["muted"], font=t.f_pequena)
+
+    def _grade(self, f: tk.Frame) -> None:
+        for i, (_id, _t, larg, estica, _ch) in enumerate(self.cols):
+            f.columnconfigure(i, minsize=larg, weight=1 if estica else 0)
+
+    # ---- API parecida com a do Treeview ---- #
+    def bind(self, sequencia: Optional[str] = None, func: Any = None, add: Any = None) -> Any:  # type: ignore[override]
+        if sequencia in ("<Double-1>", "<<TreeviewSelect>>"):
+            self._cb[sequencia] = func
+            return None
+        return super().bind(sequencia, func, add)
+
+    def tag_configure(self, *_a: Any, **_k: Any) -> None:
+        return None
+
+    def get_children(self) -> tuple[str, ...]:
+        return tuple(self._ordem)
+
+    def delete(self, *iids: str) -> None:
+        for iid in iids:
+            d = self._linhas.pop(iid, None)
+            if d:
+                d["w"].destroy()
+                self._ordem.remove(iid)
+                if self._sel == iid:
+                    self._sel = None
+        self._rotular()
+
+    def insert(self, _pai: str, _pos: str, iid: str, values: tuple[Any, ...], tags: tuple[str, ...] = ()) -> str:
+        c = self.t.c
+        grupo = "grupo" in tags
+        f = tk.Frame(self._corpo, bg=c["bg"] if grupo else c["card"])
+        f.grid(row=len(self._ordem), column=0, sticky="ew")
+        self._grade(f)
+        dados: dict[str, Any] = {"w": f, "valores": tuple(values), "tags": tags, "labels": [], "grupo": grupo}
+        if grupo:
+            l = tk.Label(f, text=str(values[1]), bg=c["bg"], fg=c["muted"], font=self.t.f_pequena, anchor="w")
+            l.grid(row=0, column=0, columnspan=len(self.cols), sticky="ew", padx=12, pady=5)
+            dados["labels"].append(l)
+        else:
+            tk.Frame(f, width=3, bg=c["card"]).place(x=0, y=0, relheight=1)  # faixa de seleção (acende ao selecionar)
+            esmaece = "off" in tags
+            for i, (col, _t, _w, _e, chip) in enumerate(self.cols):
+                txt = str(values[i])
+                px = (12 if i == 0 else 6, 6)
+                if chip and txt:
+                    cor = c["ok"] if "ok" in tags else c["warn"] if "warn" in tags else c["muted"]
+                    l = tk.Label(f, text=txt, bg=_misturar(c["card"], cor, 0.20), fg=cor, font=self.t.f_pequena,
+                                 padx=8, pady=2)
+                    l.grid(row=0, column=i, sticky="w", padx=px, pady=7)
+                else:
+                    l = tk.Label(f, text=txt, bg=c["card"], fg=c["muted"] if (esmaece or i == 0) else c["text"],
+                                 font=self.t.f_normal, anchor="w")
+                    l.grid(row=0, column=i, sticky="ew", padx=px, pady=7)
+                dados["labels"].append(l)
+            for w in (f, *dados["labels"]):
+                w.bind("<Button-1>", lambda _e, k=iid: self._clicar(k))
+                w.bind("<Double-1>", lambda _e, k=iid: self._duplo(k))
+                w.bind("<Enter>", lambda _e, k=iid: self._pintar(k, hover=True))
+                w.bind("<Leave>", lambda _e, k=iid: self._pintar(k))
+        self._linhas[iid] = dados
+        self._ordem.append(iid)
+        self._rotular()
+        return iid
+
+    def selection(self) -> tuple[str, ...]:
+        return (self._sel,) if self._sel else ()
+
+    def selection_set(self, iid: str) -> None:
+        d = self._linhas.get(iid)
+        if d is None or d["grupo"]:
+            return
+        ant, self._sel = self._sel, iid
+        if ant:
+            self._pintar(ant)
+        self._pintar(iid)
+        self._avisar()
+
+    def selection_remove(self, *iids: str) -> None:
+        if self._sel in iids:
+            ant, self._sel = self._sel, None
+            if ant:
+                self._pintar(ant)
+            self._avisar()
+
+    def item(self, iid: str, opcao: str = "values") -> tuple[Any, ...]:
+        return self._linhas[iid]["valores"]
+
+    # ---- interno ---- #
+    def _avisar(self) -> None:
+        f = self._cb.get("<<TreeviewSelect>>")
+        if f:
+            f(None)
+
+    def _clicar(self, iid: str) -> None:
+        self.selection_set(iid)
+
+    def _duplo(self, iid: str) -> None:
+        self.selection_set(iid)
+        f = self._cb.get("<Double-1>")
+        if f:
+            f(None)
+
+    def _pintar(self, iid: str, hover: bool = False) -> None:
+        d = self._linhas.get(iid)
+        if d is None or d["grupo"]:
+            return
+        c = self.t.c
+        cor = c["sel"] if iid == self._sel else c["hover"] if hover else c["card"]
+        d["w"].configure(bg=cor)
+        faixa = d["w"].place_slaves()
+        for fx in faixa:
+            fx.configure(bg=c["accent"] if iid == self._sel else cor)
+        chip_cols = {i for i, col in enumerate(self.cols) if col[4]}
+        for i, l in enumerate(d["labels"]):
+            if i not in chip_cols:
+                l.configure(bg=cor)
+
+    def _rotular(self) -> None:
+        if not self._ordem and self.vazio:
+            self._lbl_vazio.grid(row=0, column=0, sticky="ew", pady=14)
+        else:
+            self._lbl_vazio.grid_forget()

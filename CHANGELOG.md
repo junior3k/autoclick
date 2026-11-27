@@ -8,6 +8,37 @@
 - Novo ícone do aplicativo (janela, barra de tarefas e executável).
 - Acentos corretos no terminal do Windows.
 
+## 0.14.0
+- Interface mais simples: o menu lateral caiu para Gravar, Rotinas, Automático, Botões, Histórico, Configurações e Ajuda. Jogos virou uma aba de Configurações e a página Ferramentas foi desfeita (Mapa em Botões, Resumir CSV em Histórico, Diagnóstico e pastas em Configurações > Manutenção).
+- O jogo atual fica no topo da janela, com o estado e Pausar/Parar sempre à vista; os subtítulos e textos de apoio repetidos foram removidos.
+- Configurações em abas: Geral, Atalhos, Avisos e sons, Jogos e Manutenção.
+- “Esconder esta janela ao gravar ou reproduzir” agora vem DESLIGADO e é o primeiro item de Configurações > Geral. Quem já tinha a opção ligada volta ao padrão desligado uma única vez.
+- Gravar: se o arquivo já tem uma gravação, pede confirmação antes de substituir e guarda uma cópia em NOME.bak.json (pelo atalho de teclado só guarda a cópia, sem abrir janela).
+
+## 0.13.7
+- Rotinas: o item “esperar” pode rodar scripts DURANTE a espera (ex.: vender na loja enquanto as plantas nascem). O script termina por inteiro e a espera só acaba depois do tempo total; se o script for mais longo que a espera, a rotina segue logo depois dele.
+- Rotinas: botão “Duplicar” para repetir um item rapidamente; a prévia “O que vai acontecer” e a validação entendem o novo campo.
+
+## 0.13.6
+- Rotinas: a barra Iniciar/Parar ficou fixa no topo (não rola nem fica cortada) e a barra de progresso só aparece enquanto a rotina roda.
+- Rotinas: novo cartão “O que vai acontecer”, uma simulação (sem executar nada) das primeiras execuções com a duração real de cada gravação, os intervalos e as pausas — para ver a ordem e os tempos antes de iniciar.
+
+## 0.13.5
+- Rotinas: visual refeito, mais próximo da prévia — etiquetas coloridas em “Quando” (verde = na sequência, âmbar = a cada X s), títulos de grupo, linhas mais altas, destaque da linha selecionada com faixa azul e destaque ao passar o mouse; a lista de scripts usa o mesmo visual.
+
+## 0.13.4
+- Rotinas: página reorganizada em 3 partes — barra de execução no topo (iniciar, parar e progresso), uma lista única “Sua rotina” (na sequência + os que entram sozinhos a cada X s, no mesmo lugar) e a biblioteca de scripts, que pode ser recolhida.
+- Rotinas: “+ Script” pergunta se roda na sequência ou a cada X segundos; novo “Testar script” direto na lista; duplo clique num intervalo liga/desliga.
+
+## 0.13.3
+- Rotinas: gravações que guardaram a janela do próprio Autoclick (em vez da do jogo) não confundem mais a rotina; ao gravar, a janela do Autoclick nunca é escolhida como janela do jogo.
+- Rotinas: aviso quando o tempo entre scripts/voltas é muito grande (ex.: 899,5 s deixa a rotina parada 15 minutos).
+
+## 0.13.2
+- Rotinas: a rotina agora descobre a janela do jogo de cada script (ou das Configurações) e a traz para a frente antes de começar; sem janela conhecida ela não roda mais às cegas e avisa.
+- Rotinas: novo botão “Importar gravação…” para trazer gravações .json já feitas na página Gravar.
+- Rotinas: corrigido o layout (campos desenhados em cima dos botões, listas de largura fixa e sem rolagem).
+
 ## 0.13.1
 - Correção: a janela voltou a não carregar numpy/OpenCV (a leitura de atalhos foi movida para um módulo leve, `autoclick/atalhos.py`); o teste automático da janela falhava no Linux.
 

@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from ..opcionais import DICA_OCR
 
-from . import comandos
+from . import acoes, comandos
 from .. import __version__
 from .. import atualizacao
 from ..avisos import enviar_webhook_sync
@@ -31,16 +31,60 @@ PADRAO_ATALHOS = {"pausa": "F8", "parar": "F9", "gravar": "F10", "reproduzir": "
 class PaginaConfig(Pagina):
     chave = "config"
     titulo = "Configurações"
-    subtitulo = "Janela do jogo, pastas, perfis e aparência."
+    subtitulo = ""
+    ABAS = (("geral", "Geral"), ("atalhos", "Atalhos"), ("avisos", "Avisos e sons"), ("jogos", "Jogos"),
+            ("manutencao", "Manutenção"))
+
+    # ---- abas ---- #
+    def _montar_abas(self) -> None:
+        c, t = self.t.c, self.t
+        self._abas: dict[str, tk.Frame] = {}
+        self._rot_abas: dict[str, tk.Label] = {}
+        self._aba_atual = ""
+        barra = tk.Frame(self.frame, bg=c["bg"], highlightthickness=0)
+        barra.pack(fill="x", pady=(0, 10))
+        tk.Frame(barra, bg=c["border"], height=1).pack(side="bottom", fill="x")
+        for chave, texto in self.ABAS:
+            lab = tk.Label(barra, text=texto, bg=c["bg"], fg=c["muted"], font=t.f_negrito, padx=16, pady=9,
+                           cursor="hand2")
+            lab.pack(side="left")
+            lab.bind("<Button-1>", lambda _e, k=chave: self.abrir_aba(k))
+            self._rot_abas[chave] = lab
+            self._abas[chave] = tk.Frame(self.frame, bg=c["bg"])
+
+    def abrir_aba(self, chave: str) -> None:
+        if chave not in self._abas:
+            return
+        c = self.t.c
+        for k, f in self._abas.items():
+            f.pack_forget()
+            self._rot_abas[k].configure(fg=c["text"] if k == chave else c["muted"],
+                                        bg=c["sel"] if k == chave else c["bg"])
+        self._abas[chave].pack(fill="both", expand=True)
+        self._aba_atual = chave
+        sub = self.app.subpaginas.get(chave)
+        if sub is not None:
+            sub.ao_mostrar()
+
+    def _aba_rolavel(self, chave: str) -> tk.Frame:
+        rol = Rolavel(self._abas[chave], self.t)
+        rol.pack(fill="both", expand=True)
+        return rol.corpo
 
     def construir(self) -> None:
         a, c = self.app, self.t.c
-        rol = Rolavel(self.frame, self.t)
-        rol.pack(fill="both", expand=True)
-        g = rol.corpo
+        self._montar_abas()
+        g = self._aba_rolavel("geral")
+        g_at = self._aba_rolavel("atalhos")
+        g_av = self._aba_rolavel("avisos")
+        g_ma = self._aba_rolavel("manutencao")
 
         # ---------------- jogo ----------------
-        j = Cartao(g, self.t, "Jogo e arquivos", "")
+        j = Cartao(g, self.t, "Geral", "")
+        j.linha_cheia(marcar(j.corpo, "Esconder esta janela ao gravar ou reproduzir", a.var("minimizar")))
+        j.linha_cheia(rotulo(j.corpo, self.t, "Desligado por padrão. Ligado, o programa some da frente enquanto "
+                             "trabalha; Parar e Pausar continuam nas teclas de atalho.", muted=True, anchor="w",
+                             justify="left", wraplength=480), (0, 10))
         lin = linha_inline(j.corpo, self.t)
         lin.columnconfigure(0, weight=1)
         self.cb_janela = escolha(lin, a.var("janela"), [], 30, editavel=True)
@@ -53,7 +97,6 @@ class PaginaConfig(Pagina):
         j.campo("Monitor", numero(j.corpo, a.var("monitor"), 1, 8, 1, 6), "1 = principal")
         j.campo("Rigor do reconhecimento", numero(j.corpo, a.var("confianca"), 0.5, 0.99, 0.01, 8, "%.2f"),
                 "0.85 é um bom começo; menor reconhece mais (e erra mais).")
-        j.linha_cheia(marcar(j.corpo, "Minimizar esta janela ao iniciar gravação/reprodução", a.var("minimizar")), (8, 0))
 
         # ---------------- perfis ----------------
         p = Cartao(g, self.t, "Perfis", "Guarde as opções de um jogo e use também no terminal "
@@ -75,10 +118,10 @@ class PaginaConfig(Pagina):
         ap.campo("Tema", t)
 
         # ---------------- dependências ----------------
-        d = Cartao(g, self.t, "Dependências", "O programa funciona sem as opcionais: só os modos "
+        d = Cartao(g_ma, self.t, "Dependências", "O programa funciona sem as opcionais: só os modos "
                    "de texto/OCR dependem delas.")
         # ---------------- atalhos ----------------
-        at = Cartao(g, self.t, "Atalhos de teclado", "Funcionam mesmo com o jogo em primeiro plano. Clique em "
+        at = Cartao(g_at, self.t, "Atalhos de teclado", "Funcionam mesmo com o jogo em primeiro plano. Clique em "
                     "“Mudar” e aperte a tecla ou a combinação (Ctrl, Alt ou Shift + tecla). As teclas dos "
                     "atalhos não entram nas gravações.")
         self.v_teclas = {k: tk.StringVar(value=getattr(self.g, "tecla_" + k)) for k in NOMES_ATALHOS}
@@ -99,7 +142,7 @@ class PaginaConfig(Pagina):
         at.linha_cheia(botao(at.corpo, "Aplicar atalhos", self.aplicar_teclas, "Accent", True), (8, 0))
 
         # ---------------- segurança e avisos ----------------
-        se = Cartao(g, self.t, "Segurança e avisos", "O que fazer quando algo dá errado e como ser avisado.")
+        se = Cartao(g_av, self.t, "Segurança e avisos", "O que fazer quando algo dá errado e como ser avisado.")
         se.campo("Tela sem mudar por", numero(se.corpo, a.var("tela_parada"), 0, 86400, 30, 8),
                  "segundos = jogo travado? (0 = desligado)")
         se.campo("…então", escolha(se.corpo, a.var("ao_travar"), ["avisar", "parar"], 10))
@@ -149,10 +192,10 @@ class PaginaConfig(Pagina):
         botao(wl, "Testar", self.testar_webhook, "Ghost", True).grid(row=0, column=1, padx=(6, 0))
         se.campo("Webhook (opcional)", wl, "Discord/URL ou telegram:TOKEN@CHAT_ID. Recebe os alertas.")
 
-        sv = montar_cartao(self, g, a, c)
+        sv = montar_cartao(self, g_ma, a, c)
 
         # ---------------- atualização (manifesto por URL, avançado) ----------------
-        up = Cartao(g, self.t, "Atualização", f"Versão instalada: {__version__}. Seus botões, regras, "
+        up = Cartao(g_ma, self.t, "Atualização", f"Versão instalada: {__version__}. Seus botões, regras, "
                     "perfis e gravações nunca são sobrescritos.")
         up.campo("Endereço do manifesto", entrada(up.corpo, a.var("url_atualizacao")),
                  "Um JSON com {\"versao\": \"x.y.z\", \"url\": \"…zip\"}. Opcional.")
@@ -164,8 +207,20 @@ class PaginaConfig(Pagina):
         self.lbl_up = rotulo(up.corpo, self.t, "", muted=True, anchor="w", justify="left", wraplength=320)
         up.linha_cheia(self.lbl_up, (8, 0))
 
-        self._cartoes = [j, p, at, se, d, sv, up, ap]
+        fe = Cartao(g_ma, self.t, "Verificação e pastas", "")
+        fb = tk.Frame(fe.corpo, bg=c["card"])
+        fe.linha_cheia(fb)
+        botao(fb, "Diagnóstico", lambda: acoes.diagnostico(self.app), "Accent", True).pack(side="left")
+        botao(fb, "Pasta dos botões", lambda: acoes.abrir_pasta(self.app, self.g.pasta), "Ghost", True).pack(
+            side="left", padx=8)
+        botao(fb, "Pasta do projeto", lambda: acoes.abrir_pasta(self.app, "."), "Ghost", True).pack(side="left")
+        self._btns_ferr: list[Any] = list(fb.winfo_children())
+        self._cartoes = [j, p, ap]
         responsivo(g, self._cartoes)
+        responsivo(g_at, [at])
+        responsivo(g_av, [se])
+        responsivo(g_ma, [fe, sv, d, up])
+        self.abrir_aba("geral")
         self.quadro_deps = tk.Frame(d.corpo, bg=c["card"])
         d.linha_cheia(self.quadro_deps)
         botao(d.corpo, "Como instalar o OCR (opcional)", lambda: messagebox.showinfo(
@@ -491,6 +546,10 @@ class PaginaConfig(Pagina):
                                + "\n\nO Windows pode pedir permissão de administrador. Continuar?",
                                parent=self.app.raiz):
             self._instalar("instalar", cmd)
+
+    def ao_estado(self, rodando: bool) -> None:
+        for b in self._btns_ferr:
+            b.state(["disabled"] if rodando else ["!disabled"])
 
     def ao_mostrar(self) -> None:
         self.cb_perfil.configure(values=listar_perfis())

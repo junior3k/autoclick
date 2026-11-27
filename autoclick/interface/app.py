@@ -45,6 +45,7 @@ class App:
         self.t = Tema(self.raiz, self.g.tema if self.g.tema in ("escuro", "claro") else "escuro")
         self.exec = Executor(self._ao_texto, self._ao_status, self._ao_fim, diretorio)
         self.paginas: dict[str, Pagina] = {}
+        self.subpaginas: dict[str, Pagina] = {}  # páginas que moram dentro de uma aba (ex.: Jogos, em Configurações)
         self._nav: dict[str, tuple[tk.Frame, tk.Frame, tk.Label]] = {}
         self._cb_fim: Optional[Callable[[int], Any]] = None
         self._ultimo_status: dict[str, Any] = {}
@@ -109,7 +110,6 @@ class App:
         from .pag_ajuda import PaginaAjuda
         from .pag_auto import PaginaAutomatico
         from .pag_config import PaginaConfig
-        from .pag_ferramentas import PaginaFerramentas
         from .pag_gravacao import PaginaGravacao
         from .pag_historico import PaginaHistorico
         from .pag_jogos import PaginaJogos
@@ -120,6 +120,7 @@ class App:
         for w in self.raiz.winfo_children():
             w.destroy()
         self.paginas.clear()
+        self.subpaginas.clear()
         self._nav.clear()
         self._previas.clear()
         corpo = tk.Frame(self.raiz, bg=c["bg"])
@@ -137,10 +138,14 @@ class App:
         painel.add(self.area, weight=5)
         painel.add(self._montar_console(painel), weight=1)
 
-        for cls in (PaginaGravacao, PaginaRegras, PaginaAutomatico, PaginaJogos, PaginaRotinas, PaginaFerramentas,
-                    PaginaHistorico, PaginaConfig, PaginaAjuda):
+        for cls in (PaginaGravacao, PaginaRotinas, PaginaAutomatico, PaginaRegras, PaginaHistorico, PaginaConfig,
+                    PaginaAjuda):
             p = cls(self, self.area)
             self.paginas[p.chave] = p
+        cfg = self.paginas["config"]
+        pj = PaginaJogos(self, cfg._abas["jogos"])  # type: ignore[attr-defined]
+        pj.frame.pack(fill="both", expand=True)
+        self.subpaginas["jogos"] = pj
         inicial = self.g.pagina if self.g.pagina in self.paginas else "gravar"
         self.ir(inicial)
         self.atualizar_estado()
@@ -165,9 +170,8 @@ class App:
             tk.Label(logo, text="◎", bg=c["side"], fg=c["accent"], font=(t.f_grande[0], 22, "bold")).pack(side="left")
         tk.Label(logo, text="Autoclick", bg=c["side"], fg=c["text"],
                  font=(t.f_grande[0], 15, "bold")).pack(side="left", padx=(8, 0))
-        itens = [("gravar", "⏺", "Gravar & Reproduzir"), ("regras", "▦", "Botões & regras"),
-                 ("auto", "⚡", "Automático"), ("jogos", "🎮", "Jogos"), ("rotinas", "⛓", "Rotinas"), ("ferramentas", "⚙", "Ferramentas"),
-                 ("historico", "◷", "Histórico"), ("config", "☰", "Configurações"),
+        itens = [("gravar", "⏺", "Gravar"), ("rotinas", "⛓", "Rotinas"), ("auto", "⚡", "Automático"),
+                 ("regras", "▦", "Botões"), ("historico", "◷", "Histórico"), ("config", "☰", "Configurações"),
                  ("ajuda", "?", "Ajuda")]
         for chave, simbolo, texto in itens:
             linha = tk.Frame(lado, bg=c["side"], cursor="hand2")
@@ -234,10 +238,13 @@ class App:
         topo.pack(fill="x", padx=28, pady=(22, 6))
         topo.columnconfigure(0, weight=1)
         esq = tk.Frame(topo, bg=c["bg"])
-        self.lbl_titulo = ttk.Label(esq, text="", style="H1.TLabel")
-        self.lbl_titulo.pack(anchor="w")
+        self.lbl_titulo = ttk.Label(esq, text="", style="H1.TLabel")  # o menu lateral já diz em que página está
         self.lbl_sub = ttk.Label(esq, text="", style="PageMuted.TLabel", justify="left")
-        self.lbl_sub.pack(anchor="w", pady=(2, 0), fill="x")
+        self.mb_jogo = ttk.Menubutton(esq, text="", style="Ghost.TButton", cursor="hand2")
+        self.mb_jogo.pack(anchor="w")
+        self.menu_jogo = tk.Menu(self.mb_jogo, tearoff=0)
+        self.mb_jogo.configure(menu=self.menu_jogo)
+        self.atualizar_menu_jogos()
         # Estado + Pausar + Parar: três colunas de MESMA largura (uniform) e nunca cortadas.
         dir_ = tk.Frame(topo, bg=c["bg"])
         for i in (0, 2, 4):
@@ -267,9 +274,6 @@ class App:
             else:
                 self._esq.grid(row=0, column=0, sticky="ew", padx=(0, 16))
                 self._dir.grid(row=0, column=1, sticky="e")
-        livre = largura - (0 if empilhar else self._dir.winfo_reqwidth() + 16)
-        if livre > 60:
-            self.lbl_sub.configure(wraplength=livre)
 
     def _montar_console(self, pai: tk.Misc) -> tk.Frame:
         c, t = self.t.c, self.t
@@ -284,15 +288,10 @@ class App:
         self.btn_som = botao(barra, "", self.alternar_som, "Ghost", True)
         self.btn_som.pack(side="right", padx=6)
         self._pintar_som()
-        self.mb_jogo = ttk.Menubutton(barra, text="", style="Small.Ghost.TButton", cursor="hand2")
-        self.mb_jogo.pack(side="right", padx=6)
-        self.menu_jogo = tk.Menu(self.mb_jogo, tearoff=0)
-        self.mb_jogo.configure(menu=self.menu_jogo)
-        self.atualizar_menu_jogos()
         ttk.Label(barra, text="Mensagens", style="TLabel", font=t.f_card).pack(side="left")
         caixa = tk.Frame(quadro, bg=c["log"], highlightthickness=1, highlightbackground=c["border"])
         caixa.pack(fill="both", expand=True, padx=28, pady=(0, 18))
-        self.log = tk.Text(caixa, bg=c["log"], fg=c["text"], font=t.f_mono, wrap="word", height=8,
+        self.log = tk.Text(caixa, bg=c["log"], fg=c["text"], font=t.f_mono, wrap="word", height=5,
                            borderwidth=0, highlightthickness=0, padx=12, pady=8,
                            insertbackground=c["text"], state="disabled", spacing1=1)
         sb = ttk.Scrollbar(caixa, orient="vertical", command=self.log.yview)
@@ -302,7 +301,7 @@ class App:
         for tag, cor in (("erro", c["danger"]), ("aviso", c["warn"]), ("ok", c["ok"]),
                          ("cmd", c["accent"]), ("dim", c["muted"])):
             self.log.tag_configure(tag, foreground=cor)
-        self.log_texto("Pronto. Escolha uma função no menu à esquerda.\n", "dim")
+        self.log_texto("Pronto.\n", "dim")
         return quadro
 
     # ------------------------------------------------------------------ #
@@ -314,6 +313,10 @@ class App:
                                        f"{g.tecla_gravar}  gravar / parar\n{g.tecla_reproduzir}  reproduzir / parar")
 
     def ir(self, chave: str) -> None:
+        if chave in self.subpaginas:  # Jogos mora numa aba de Configurações
+            self.ir("config")
+            self.paginas["config"].abrir_aba(chave)  # type: ignore[attr-defined]
+            return
         atual = self.paginas.get(self.g.pagina)
         if atual is not None and chave != self.g.pagina and not atual.pode_sair():
             return
@@ -329,8 +332,6 @@ class App:
             p.frame.pack_forget()
         pg = self.paginas[chave]
         pg.frame.pack(fill="both", expand=True, padx=28, pady=(0, 6))
-        self.lbl_titulo.configure(text=pg.titulo)
-        self.lbl_sub.configure(text=pg.subtitulo)
         pg.ao_mostrar()
 
     # ------------------------------------------------------------------ #
@@ -526,7 +527,7 @@ class App:
                 elif not self.exec.rodando:
                     pg = self.paginas.get("gravar")
                     if pg is not None:
-                        pg.gravar()  # type: ignore[attr-defined]
+                        pg.gravar(perguntar=False)  # type: ignore[attr-defined]
             elif ev.startswith("jogo:"):
                 self.jogos.escolher(ev[5:])
 
@@ -553,7 +554,7 @@ class App:
             pg = self.paginas.get("gravar")
             if pg is not None and hasattr(pg, "gravar"):
                 self.log_texto(f"{self.g.tecla_gravar}: iniciando a gravação.\n", "aviso")
-                pg.gravar()  # type: ignore[attr-defined]
+                pg.gravar(perguntar=False)  # type: ignore[attr-defined]
 
     def _tick_tecla_reproduzir(self) -> None:
         """Atalho global (funciona com o jogo em primeiro plano): inicia ou para a reprodução."""
@@ -585,7 +586,7 @@ class App:
         """Rótulo e menu rápido “🎮 Jogo: X ▾” (barra de mensagens) e dados do menu da bandeja."""
         ctl = self.jogos
         lista = ctl.lista()
-        self.mb_jogo.configure(text=f"🎮 {ctl.nome_atual()} ▾")
+        self.mb_jogo.configure(text=f"Jogo: {ctl.nome_atual()} ▾")
         self.menu_jogo.delete(0, "end")
         for j in lista:
             self.menu_jogo.add_command(
